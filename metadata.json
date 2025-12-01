@@ -1,0 +1,5 @@
+{
+  "name": "Text-Aufbereiter für Hörbücher",
+  "description": "Ein robustes Werkzeug zur Bereinigung von Dokumenten (PDF, DOCX, etc.). Erzeugt technisch perfekten, sanitisierten Output (UTF-8 BOM) für nachgelagerte Audio-Pipelines und TTS-Systeme.",
+  "requestFramePermissions": []
+}
