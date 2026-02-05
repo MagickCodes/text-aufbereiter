@@ -6,9 +6,10 @@ interface ProcessingViewProps {
   progress: number;
   currentChunk: number;
   totalChunks: number;
+  onCancel?: () => void;
 }
 
-export const ProcessingView: React.FC<ProcessingViewProps> = ({ etr, progress, currentChunk, totalChunks }) => {
+export const ProcessingView: React.FC<ProcessingViewProps> = ({ etr, progress, currentChunk, totalChunks, onCancel }) => {
   // Show progress bar if we have explicit chunks (cleaning) OR if progress > 0 (extraction)
   const showProgress = (totalChunks > 0 && currentChunk > 0) || progress > 0;
   
@@ -56,6 +57,20 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({ etr, progress, c
               <span className="text-white font-semibold">{Math.round(progress)}%</span>
           </div>
         </div>
+      )}
+
+      {/* Cancel Button - only show during cleaning (when onCancel is provided) */}
+      {onCancel && (
+        <button
+          onClick={onCancel}
+          className="mt-6 px-4 py-2 flex items-center gap-2 text-sm font-medium text-red-400 border border-red-400/50 rounded-lg hover:bg-red-400/10 hover:border-red-400 transition-colors focus:outline-none focus:ring-2 focus:ring-red-400/50"
+          aria-label="Verarbeitung abbrechen"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+          Abbrechen
+        </button>
       )}
     </div>
   );

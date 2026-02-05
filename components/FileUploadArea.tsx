@@ -8,6 +8,21 @@ interface FileUploadAreaProps {
 
 export const FileUploadArea: React.FC<FileUploadAreaProps> = ({ onFileSelect }) => {
   const [isDragging, setIsDragging] = useState(false);
+  const [pastedText, setPastedText] = useState('');
+
+  // Handler für direkte Texteingabe - erstellt virtuelles File
+  const handleUseText = useCallback(() => {
+    if (!pastedText.trim()) return;
+
+    // Erstelle virtuelles File-Objekt aus dem eingegebenen Text
+    const virtualFile = new File(
+      [pastedText],
+      'clipboard-input.txt',
+      { type: 'text/plain' }
+    );
+
+    onFileSelect(virtualFile);
+  }, [pastedText, onFileSelect]);
 
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -70,7 +85,42 @@ export const FileUploadArea: React.FC<FileUploadAreaProps> = ({ onFileSelect }) 
           onChange={handleFileChange}
         />
       </div>
-      
+
+      {/* Trenner */}
+      <div className="w-full max-w-2xl flex items-center gap-4 my-8">
+        <div className="flex-1 h-px bg-gray-600"></div>
+        <span className="text-gray-500 text-sm font-medium">ODER</span>
+        <div className="flex-1 h-px bg-gray-600"></div>
+      </div>
+
+      {/* Direkte Texteingabe */}
+      <div className="w-full max-w-2xl">
+        <label htmlFor="paste-text" className="block text-sm font-medium text-gray-300 mb-2">
+          Text direkt einfügen
+        </label>
+        <textarea
+          id="paste-text"
+          value={pastedText}
+          onChange={(e) => setPastedText(e.target.value)}
+          placeholder="Hier Text direkt einfügen (Copy & Paste)..."
+          rows={8}
+          className="w-full p-4 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-primary focus:border-transparent resize-y min-h-[120px] transition-colors"
+        />
+        <div className="mt-3 flex justify-end">
+          <button
+            onClick={handleUseText}
+            disabled={!pastedText.trim()}
+            className={`px-6 py-2.5 font-semibold rounded-lg transition-all ${
+              pastedText.trim()
+                ? 'bg-brand-primary text-white hover:bg-brand-secondary cursor-pointer'
+                : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            Text verwenden
+          </button>
+        </div>
+      </div>
+
       <div className="mt-8 max-w-2xl text-center">
           <div className="flex items-start justify-center gap-2 text-xs text-gray-500 bg-gray-800/50 p-3 rounded-lg border border-gray-700">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 flex-shrink-0 text-brand-secondary">

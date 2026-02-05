@@ -6,20 +6,120 @@ if (typeof pdfjsLib !== 'undefined') {
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.mjs`;
 }
 
+// Hilfsfunktion zur robusteren Fehlererkennung
+const isLockError = (error: any) => {
+    if (!error) return false;
+    const name = error.name || '';
+    const msg = (error.message || '').toLowerCase();
+    const str = String(error).toLowerCase();
+
+    // Check auf DOMException Code 13 oder SecurityError
+    if (error instanceof DOMException && (error.name === 'NoModificationAllowedError' || error.name === 'NotReadableError' || error.name === 'AbortError')) {
+        return true;
+    }
+
+    return (
+        name === 'NoModificationAllowedError' ||
+        name === 'NotReadableError' ||
+        name === 'SecurityError' ||
+        name === 'AbortError' || // WICHTIG: AbortError als Lock behandeln
+        msg.includes('nomodificationallowederror') ||
+        msg.includes('modifications are not allowed') ||
+        msg.includes('zugriff verweigert') ||
+        msg.includes('access is denied') ||
+        msg.includes('not readable') ||
+        msg.includes('aborted') ||
+        msg.includes('lock') ||
+        str.includes('nomodificationallowederror')
+    );
+};
+
+const getLockErrorMessage = (fileType: string) => `Zugriff verweigert: Die ${fileType}-Datei wird vom System gesperrt (z.B. Virenscanner). \n\n` +
+    `LÖSUNG: Warten Sie einen Moment und versuchen Sie es erneut.`;
+
+const readFileAsArrayBuffer = (file: Blob) => {
+    return new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.onerror = () => reject(reader.error || new Error('FileReader Error'));
+        reader.onabort = () => reject(new Error('AbortError: Lesen abgebrochen'));
+        reader.readAsArrayBuffer(file);
+    });
+};
+
+/**
+ * ULTRA-ROBUST FILE READER
+ * Retries significantly longer (up to 15 tries, ~30s) to outwait Windows Defender / Antivirus locks.
+ */
+const readBufferWithRetry = async (file: File, retries = 15, delayMs = 1000) => {
+    let lastError = null;
+
+    if (file.size === 0) {
+        throw new Error('Die Datei ist leer (0 Bytes).');
+    }
+
+    for (let i = 0; i < retries; i++) {
+        try {
+            // Versuch 1: Standard ArrayBuffer (schnellste Methode)
+            const buffer = await file.arrayBuffer();
+            return buffer;
+        } catch (error: any) {
+            lastError = error;
+            const isLock = isLockError(error);
+
+            console.warn(`Leseversuch ${i + 1}/${retries} fehlgeschlagen (${error.name}). Lock erkannt: ${isLock}`);
+
+            // Wenn es KEIN Lock-Fehler ist, brechen wir sofort ab (z.B. Formatfehler)
+            if (!isLock && i > 0) throw error;
+
+            // Exponentielles Warten (bis max 4s pro Versuch)
+            const waitTime = Math.min(delayMs * Math.pow(1.2, i), 4000);
+
+            if (i < retries - 1) {
+                await new Promise(r => setTimeout(r, waitTime));
+                continue;
+            }
+
+            // Wenn alle Standard-Versuche fehlschlagen, probieren wir Slice-Tricks
+            try {
+                console.warn('Standard-Lesen fehlgeschlagen, versuche Fallback via Slice...');
+                const slicedBlob = file.slice(0, file.size);
+                return await readFileAsArrayBuffer(slicedBlob);
+            } catch (sliceError: any) {
+                // Letzter Ausweg: Chunked Reading via FileReader direkt auf File
+                try {
+                    return await readFileAsArrayBuffer(file);
+                } catch (readerError) {
+                    if (isLockError(readerError) || isLockError(sliceError) || isLockError(lastError)) {
+                        throw new Error(`NoModificationAllowedError: System verweigert Zugriff auf ${file.name} dauerhaft.`);
+                    }
+                    throw readerError;
+                }
+            }
+        }
+    }
+    throw new Error('Dateizugriff fehlgeschlagen: Virenscanner blockiert die Datei zu lange.');
+};
+
 /**
  * Centralized helper to safely read a file into an ArrayBuffer.
  * Handles file system locks (Antivirus, Downloads) and permission errors consistently for all parsers.
  */
 const readBufferSafe = async (file: File): Promise<ArrayBuffer> => {
     try {
-        return await file.arrayBuffer();
+        return await readBufferWithRetry(file);
     } catch (readError: any) {
         const name = readError.name || '';
         const msg = (readError.message || '').toLowerCase();
 
         // Handle specific file system lock errors defined by File API standards
-        if (name === 'NoModificationAllowedError' || name === 'NotReadableError' || msg.includes('lock')) {
+        if (isLockError(readError)) {
             throw new Error('Zugriff verweigert: Die Datei ist gesperrt. Mögliche Ursachen: Die Datei ist noch geöffnet (z.B. in Word/Adobe), wird von einem Virenscanner geprüft oder der Download ist noch nicht abgeschlossen.');
+        }
+
+        // Rethrow if it's already our custom error message
+        if (readError.message && (readError.message.includes('System verweigert Zugriff') || readError.message.includes('Virenscanner'))) {
+            throw readError;
         }
 
         // Fallback for other read errors
@@ -302,7 +402,7 @@ const parseTxt = async (file: File, onProgress?: (percent: number) => void): Pro
         const decoded = decoder.decode(arrayBuffer);
         if (decoded.trim()) {
             if (onProgress) onProgress(100);
-            return decoded;
+            return decoded.replace(/^\uFEFF/, '');
         }
     } catch (e) {
         // Not valid UTF-8, continue to heuristics
@@ -387,7 +487,7 @@ const parseTxt = async (file: File, onProgress?: (percent: number) => void): Pro
         throw new Error('Die Textdatei enthält keinen lesbaren Text oder besteht nur aus Leerzeichen.');
     }
 
-    return bestText;
+    return bestText.replace(/^\uFEFF/, '');
 };
 
 
@@ -410,7 +510,7 @@ const parseRtf = (file: File, onProgress?: (percent: number) => void): Promise<s
                         if (!text.trim()) {
                             reject(new Error('Die RTF-Datei enthält keinen extrahierbaren Text. Sie könnte nur Bilder enthalten oder eine inkompatible Version sein.'));
                         } else {
-                            resolve(text);
+                            resolve(text.replace(/^\uFEFF/, ''));
                         }
                     } catch (rtfParseError) {
                         console.error("RTF parsing failed:", rtfParseError);

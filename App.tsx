@@ -1,6 +1,6 @@
 import React, { useCallback, useReducer, useEffect, useRef, useState } from 'react';
-import { AppState, CleaningOptions, AppStateShape, AppAction, TokenUsage } from './types';
-import { cleanTextStream, getDetailedCleaningSummary } from './services/geminiService';
+import { AppState, CleaningOptions, AppStateShape, AppAction, TokenUsage, DetectedPause } from './types';
+import { getDetailedCleaningSummary, processChunkWithWatchdog } from './services/geminiService';
 import { fileParsers } from './services/parserService';
 import { Header } from './components/Header';
 import { FileUploadArea } from './components/FileUploadArea';
@@ -8,9 +8,12 @@ import { ProcessingView } from './components/ProcessingView';
 import { ResultView } from './components/ResultView';
 import { ErrorView } from './components/ErrorView';
 import { ConfigurationView } from './components/ConfigurationView';
+import { MeditationReview } from './components/MeditationReview';
 import { Footer } from './components/Footer';
 import { MAX_FILE_SIZE, CHUNK_SIZE, ETR_HISTORY_SIZE } from './constants';
-import { smartSplitText, formatEtr } from './services/utils';
+import { smartSplitText, formatEtr, sanitizeTextContent } from './services/utils';
+import { injectPauses } from './services/pauseInjector';
+import { scanForExplicitPauses, applyMeditationPauses } from './services/meditationScanner';
 
 const initialState: AppStateShape = {
   appState: AppState.IDLE,
@@ -24,7 +27,11 @@ const initialState: AppStateShape = {
   totalChunks: 0,
   summaryState: 'IDLE',
   cleaningSummary: [],
-  tokenUsage: { prompt: 0, output: 0 }
+  tokenUsage: { prompt: 0, output: 0 },
+  // Meditation Mode
+  processingMode: 'standard',
+  detectedPauses: [],
+  isReviewingPauses: false
 };
 
 function appReducer(state: AppStateShape, action: AppAction): AppStateShape {
@@ -71,6 +78,44 @@ function appReducer(state: AppStateShape, action: AppAction): AppStateShape {
       return { ...state, summaryState: 'SUCCESS', cleaningSummary: action.payload.summary };
     case 'SUMMARY_ERROR':
       return { ...state, summaryState: 'ERROR' };
+
+    case 'UPDATE_CLEANED_TEXT':
+      return { ...state, cleanedText: action.payload.text };
+
+    // Meditation Mode actions
+    case 'SET_PROCESSING_MODE':
+      return { ...state, processingMode: action.payload.mode };
+    case 'START_PAUSE_REVIEW':
+      return {
+        ...state,
+        detectedPauses: action.payload.detectedPauses,
+        isReviewingPauses: true,
+        appState: AppState.CONFIGURING // Stay in config-like state
+      };
+    case 'UPDATE_PAUSE_DURATION':
+      return {
+        ...state,
+        detectedPauses: state.detectedPauses.map(p =>
+          p.id === action.payload.pauseId ? { ...p, duration: action.payload.duration } : p
+        )
+      };
+    case 'FINISH_PAUSE_REVIEW':
+      return {
+        ...state,
+        appState: AppState.SUCCESS,
+        cleanedText: action.payload.cleanedText,
+        isReviewingPauses: false
+      };
+
+    // Navigation actions
+    case 'BACK_TO_CONFIG':
+      return {
+        ...state,
+        appState: AppState.CONFIGURING,
+        errorMessage: '',
+        isReviewingPauses: false
+      };
+
     default:
       return state;
   }
@@ -78,7 +123,7 @@ function appReducer(state: AppStateShape, action: AppAction): AppStateShape {
 
 const App: React.FC = () => {
   const [state, dispatch] = useReducer(appReducer, initialState);
-  const { appState, rawText, cleanedText, errorMessage, fileName, progress, etr, currentChunk, totalChunks, summaryState, cleaningSummary, tokenUsage } = state;
+  const { appState, rawText, cleanedText, errorMessage, fileName, progress, etr, currentChunk, totalChunks, summaryState, cleaningSummary, tokenUsage, processingMode, detectedPauses, isReviewingPauses } = state;
 
   // Ref to store selected options for summary generation
   const optionsRef = useRef<CleaningOptions | null>(null);
@@ -115,6 +160,36 @@ const App: React.FC = () => {
     dispatch({ type: 'RESET' });
     optionsRef.current = null;
   }, []);
+
+  // Handler for canceling processing - returns to CONFIGURING state (not full reset)
+  const handleCancelProcessing = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    // Go back to configuration instead of full reset - preserves rawText
+    dispatch({ type: 'BACK_TO_CONFIG' });
+  }, []);
+
+  // Handler for navigating back to configuration (preserves rawText)
+  const handleBackToConfig = useCallback(() => {
+    dispatch({ type: 'BACK_TO_CONFIG' });
+  }, []);
+
+  // Handler for Meditation Mode: Apply pauses after user review
+  const handleMeditationPausesConfirm = useCallback((updatedPauses: DetectedPause[]) => {
+    // Retrieve the stored sanitized text
+    const meditationText = (optionsRef.current as any)?.__meditationText || cleanedText;
+
+    // Apply the meditation pauses with user-adjusted durations
+    const textWithPauses = applyMeditationPauses(meditationText, updatedPauses);
+
+    // Transition to success state
+    dispatch({
+      type: 'FINISH_PAUSE_REVIEW',
+      payload: { cleanedText: textWithPauses }
+    });
+  }, [cleanedText]);
 
   const handleFileProcess = useCallback(async (file: File) => {
     dispatch({ type: 'START_EXTRACTION', payload: { fileName: file.name } });
@@ -182,7 +257,12 @@ const App: React.FC = () => {
   }, []);
 
   const handleStartCleaning = useCallback(async (options: CleaningOptions) => {
-    optionsRef.current = options;
+    // Safety check: Force chapterStyle to 'keep' in meditation mode
+    const safeOptions: CleaningOptions = {
+      ...options,
+      chapterStyle: options.processingMode === 'meditation' ? 'keep' : options.chapterStyle,
+    };
+    optionsRef.current = safeOptions;
 
     // Setup AbortController
     if (abortControllerRef.current) {
@@ -218,15 +298,14 @@ const App: React.FC = () => {
           dispatch({ type: 'UPDATE_TOKEN_USAGE', payload: usage });
         };
 
-        // Pass signal to cleanTextStream for local regex cancellation support
-        const stream = cleanTextStream(chunks[i], options, signal, onUsage);
-        let chunkContent = '';
-        for await (const chunk of stream) {
+        // Use Watchdog wrapper from Service
+        try {
+          const chunkContent = await processChunkWithWatchdog(chunks[i], safeOptions, signal, onUsage);
+          accumulatedText += chunkContent;
+        } catch (err: any) {
           if (signal.aborted) return;
-          chunkContent += chunk;
+          throw err; // Should not happen with fallback, unless offline fails or fatal error
         }
-
-        accumulatedText += chunkContent;
 
         // Calculate progress and ETR
         const chunkEndTime = Date.now();
@@ -256,12 +335,58 @@ const App: React.FC = () => {
             }
           });
         }
+
+        // Safety Brake: Artificial delay to prevent Rate Limits (Request Per Minute)
+        // Only if in Online Mode (API Key present) and not the last chunk
+        if (import.meta.env.VITE_GEMINI_API_KEY && i < chunks.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
       }
 
       if (signal.aborted) return;
 
       await new Promise(resolve => setTimeout(resolve, 100));
-      dispatch({ type: 'CLEANING_SUCCESS', payload: { cleanedText: accumulatedText } });
+      // Pre-sanitize before storing in state to match UI/Download EXACTLY
+      let fullySanitizedText = sanitizeTextContent(accumulatedText);
+
+      // STEP 2: Processing Mode Decision Point
+      const mode = safeOptions.processingMode || 'standard';
+
+      if (mode === 'meditation') {
+        // MEDITATION MODE: Scan for explicit pauses and show review UI
+        const detectedPauses = scanForExplicitPauses(fullySanitizedText);
+
+        if (detectedPauses.length === 0) {
+          // No pauses found - show error
+          dispatch({
+            type: 'SET_ERROR',
+            payload: {
+              message: 'Keine Pausen gefunden. Im Meditations-Modus müssen Zeilen mit "PAUSE" oder "KURZE/LANGE PAUSE" beginnen (z.B. "PAUSE, um tief einzuatmen" oder "KURZE PAUSE für drei Atemzüge").'
+            }
+          });
+          return;
+        }
+
+        // Show pause review UI (user will set durations)
+        // Store the sanitized text temporarily for later processing
+        optionsRef.current = { ...safeOptions, __meditationText: fullySanitizedText } as any;
+
+        dispatch({
+          type: 'START_PAUSE_REVIEW',
+          payload: { detectedPauses }
+        });
+
+        // Don't dispatch CLEANING_SUCCESS yet - wait for user to confirm pauses
+        return; // Exit early
+
+      } else {
+        // STANDARD MODE: Automatic pause injection based on structure
+        if (safeOptions.pauseConfig) {
+          fullySanitizedText = injectPauses(fullySanitizedText, safeOptions.pauseConfig);
+        }
+
+        dispatch({ type: 'CLEANING_SUCCESS', payload: { cleanedText: fullySanitizedText } });
+      }
 
     } catch (error: any) {
       if (signal.aborted) return;
@@ -275,7 +400,7 @@ const App: React.FC = () => {
       if (signal.aborted) return;
       dispatch({ type: 'START_SUMMARY' });
       // Pass options to getDetailedCleaningSummary for the fallback mode
-      const summary = await getDetailedCleaningSummary(rawText, accumulatedText, options);
+      const summary = await getDetailedCleaningSummary(rawText, accumulatedText, safeOptions);
       if (!signal.aborted) {
         dispatch({ type: 'SUMMARY_SUCCESS', payload: { summary } });
       }
@@ -331,16 +456,41 @@ const App: React.FC = () => {
       case AppState.IDLE:
         return <FileUploadArea onFileSelect={handleFileProcess} />;
       case AppState.EXTRACTING:
-        // Pass 0/0 as chunks but real progress/etr
+        // Pass 0/0 as chunks but real progress/etr - no cancel during extraction (too fast)
         return <ProcessingView currentChunk={0} totalChunks={0} progress={progress} etr={etr} />;
       case AppState.CLEANING:
-        return <ProcessingView currentChunk={currentChunk} totalChunks={totalChunks} progress={progress} etr={etr} />;
+        return <ProcessingView currentChunk={currentChunk} totalChunks={totalChunks} progress={progress} etr={etr} onCancel={handleCancelProcessing} />;
       case AppState.CONFIGURING:
+        // Check if we're in Meditation Review mode
+        if (isReviewingPauses && detectedPauses.length > 0) {
+          return <MeditationReview
+            pauses={detectedPauses}
+            onConfirm={handleMeditationPausesConfirm}
+            onCancel={resetApp}
+          />;
+        }
         return <ConfigurationView rawText={rawText} onStartCleaning={handleStartCleaning} onCancel={resetApp} />;
       case AppState.SUCCESS:
-        return <ResultView text={cleanedText} fileName={fileName} onReset={resetApp} summary={cleaningSummary} summaryState={summaryState} tokenUsage={tokenUsage} />;
+        return <ResultView
+          text={cleanedText}
+          rawText={rawText}
+          fileName={fileName}
+          onReset={resetApp}
+          summary={cleaningSummary}
+          summaryState={summaryState}
+          tokenUsage={tokenUsage}
+          onTextChange={(newText) => dispatch({ type: 'UPDATE_CLEANED_TEXT', payload: { text: newText } })}
+        />;
       case AppState.ERROR:
-        return <ErrorView message={errorMessage} onReset={resetApp} />;
+        return (
+          <ErrorView
+            message={errorMessage}
+            onReset={resetApp}
+            onBackToConfig={handleBackToConfig}
+            onNewFile={resetApp}
+            hasRawText={!!rawText}
+          />
+        );
       default:
         return null;
     }

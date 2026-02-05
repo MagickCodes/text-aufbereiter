@@ -11,14 +11,63 @@ Die Anwendung arbeitet hybrid: Sie nutzt standardmäßig modernste **KI-Modelle*
   - *Intelligent:* Automatische Erkennung von Zeichenkodierungen (z.B. UTF-8 vs. Windows-1252) für korrekte Umlaute.
   - *Robust:* 3-stufiger Fallback-Mechanismus für beschädigte DOCX-Dateien (Mammoth -> JSZip -> Raw Scraper).
 - **Hybrid-Modus (KI & Offline):**
-  - **Online (KI):** Kontextsensitive Optimierung, Reparatur von Satzbrüchen, intelligente Umformulierungen.
+  - **Online (KI):** Kontextsensitive Optimierung, Reparatur von Satzbrüchen. **Silent Mode:** Strikte Anweisung gegen KI-Geplapper ("Gerne...").
+  - **Stabilität:** Integrierter **Watchdog**: 130s Timeout-Schutz, Auto-Retry und intelligenter Fallback auf Offline-Modus bei API-Problemen.
+  - **Smart Rate-Limit:** Automatische Drosselung (2s Bremse) zur Vermeidung von 429-Fehlern.
   - **Offline (Lokal):** Schnelle, regelbasierte Bereinigung (Regex) ohne Datenversand.
+  - **⏹️ Abbruch-Funktion (NEU):** Laufende KI-Verarbeitung kann jederzeit über den "Abbrechen"-Button gestoppt werden – sofortige Rückkehr zur Konfiguration ohne Datenverlust.
+- **🧠 Intelligente Abkürzungserweiterung:** Verwandelt 60+ kryptische Kürzel automatisch in flüssiges Deutsch für optimalen Vorlesefluss.
+  - *Allgemein:* z.B. → zum Beispiel, d.h. → das heißt, ggf. → gegebenenfalls, bzw. → beziehungsweise, usw. → und so weiter
+  - *Referenzen:* vgl. → vergleiche, s.o. → siehe oben, s.u. → siehe unten, i.d.R. → in der Regel
+  - *Titel:* Dr. → Doktor, Prof. → Professor, Hr. → Herr, Fr. → Frau
+  - *Zeit/Maße:* Std. → Stunde, min. → Minute, ca. → circa, max. → maximal
+  - *Finanzen:* zzgl. → zuzüglich, inkl. → inklusive, gem. → gemäß
+  - Funktioniert in beiden Modi (KI & Offline) – der Text wird vor der Verarbeitung automatisch erweitert.
+- **⭐ Intelligente Pausen-Steuerung (NEU):** Automatisches Einfügen von Audio-Pausen-Tags für TTS-Engines.
+  - **Format:** `[PAUSE Xs]` (z.B. `[PAUSE 2s]` für 2 Sekunden Pause)
+  - **Absatz-Pausen:** Längere Pausen zwischen Absätzen (Standard: 2s)
+  - **Satz-Pausen:** Kürzere Pausen nach Satzenden (Standard: 0.8s, optional)
+  - **Intelligenz:** Erkennt Abkürzungen (z.B. "z.B.", "Dr.") und fügt dort keine Pausen ein
+  - **Duplikat-Schutz:** Vermeidet doppelte Tags an Absatzgrenzen
+  - **Konfigurierbar:** Vollständige Kontrolle über Dauer und Aktivierung
+- **🧘 Meditation & Skript-Modus (NEU):** Spezialmodus für interaktive Pausen-Kontrolle in geführten Meditationen, Theaterstücken oder Yoga-Anleitungen.
+  - **💎 High-Fidelity Mode:** Im Meditations-Modus arbeitet die KI mit `temperature: 0.0` (Zero-Hallucination Policy), um den Originaltext exakt zu bewahren – keine Halluzinationen, keine kreativen Umformulierungen.
+  - **🛡️ Protection Layer:** Regieanweisungen (PAUSE, STILLE, NACHSPÜREN) sind technisch durch einen Maskierungs-Mechanismus vor der KI geschützt – sie bleiben zu 100% unverändert erhalten, während Abkürzungen dennoch ausgeschrieben werden.
+  - **Zwei Arbeitsweisen:**
+    - **Standard-Modus:** Automatische Pausen nach Absätzen/Sätzen (siehe oben)
+    - **Meditation-Modus:** Interaktive Festlegung von Pausen-Dauern für explizite Regieanweisungen
+  - **Erwartetes Input-Format (Meditation-Modus):**
+    - Schreiben Sie eines der Schlüsselwörter am Anfang einer Zeile, gefolgt von einer Beschreibung
+    - **Unterstützte Schlüsselwörter:** `PAUSE`, `STILLE`, `NACHSPÜREN`
+    - **Unterstützte Variationen (mit optionalem Adjektiv):**
+      - `PAUSE, um tief einzuatmen`
+      - `KURZE PAUSE für drei Atemzüge`
+      - `LANGE STILLE: dem Klang nachspüren`
+      - `STILLE`
+      - `NACHSPÜREN`
+      - `KLEINE PAUSE`
+      - `GROSSE PAUSE zum Nachdenken`
+  - **Workflow:**
+    1. Text hochladen mit PAUSE-Zeilen
+    2. Interaktive Review-Oberfläche öffnet sich automatisch
+    3. Für jede Pause individuell die Dauer festlegen (z.B. 5s, 15s, 30s)
+    4. Bestätigen → Tags werden eingefügt
+  - **Vorher/Nachher Beispiele:**
+    - *Standard-Modus (automatisch):*
+      **Vorher:** `Dies ist ein Absatz.\n\nDies ist der nächste Absatz.`
+      **Nachher:** `Dies ist ein Absatz. [PAUSE 2s]\n\nDies ist der nächste Absatz.`
+    - *Meditation-Modus (interaktiv):*
+      **Vorher:** `KURZE PAUSE, um tief einzuatmen`
+      **Nachher:** `KURZE PAUSE, um tief einzuatmen [PAUSE 10s]` *(Dauer vom User festgelegt)*
+      **Vorher:** `STILLE, um dem Klang nachzuspüren`
+      **Nachher:** `STILLE, um dem Klang nachzuspüren [PAUSE 20s]`
+  - **Intelligenz:** Originaltext bleibt exakt erhalten (Zero-Hallucination Policy), TTS-Engine liest die Anweisung vor UND pausiert dann
 - **Kostentransparenz:** Live-Schätzung der benötigten Tokens und der zu erwartenden API-Kosten (in Cent) *vor* dem Start.
 - **Integrierte Vorlese-Funktion (TTS):** Überprüfen Sie das Ergebnis sofort akustisch mit der integrierten Browser-Sprachausgabe ("Roboter-Stimme"), um den Lesefluss zu testen.
 - **Granulare Konfiguration:**
   - **Struktur:** Kapitelmarker entfernen oder behalten.
   - **Listen:** Aufzählungen in Fließtext umwandeln oder Struktur wahren.
-  - **Details:** Getrennte Steuerung für das Entfernen von **URLs**, **E-Mail-Adressen** und **Quellenverweisen/Fußnoten**.
+  - **Details:** Getrennte Steuerung für das Entfernen von **URLs**, **E-Mail-Adressen** (vollständig entfernen) und **Quellenverweisen/Fußnoten**.
   - **Typografie:** Silbentrennung zusammenfügen, doppelte Leerzeichen korrigieren.
 - **Transparenz & Sicherheit:**
   - Live-Fortschrittsanzeige mit geschätzter Restzeit (ETR).
@@ -116,7 +165,7 @@ Die Anwendung wählt automatisch den passenden Modus. Ist ein API-Schlüssel hin
 ## 🔒 Sicherheit & Produktiver Einsatz (WICHTIG)
 
 ### Das Problem: Client-Side API Keys
-In der Standard-Konfiguration für lokale Tests wird der API-Schlüssel über `process.env.API_KEY` in das Frontend geladen. Bei einer öffentlichen Website wäre dieser Schlüssel im Quellcode sichtbar.
+In der Standard-Konfiguration für lokale Tests wird der API-Schlüssel über `import.meta.env.VITE_GEMINI_API_KEY` in das Frontend geladen. Bei einer öffentlichen Website wäre dieser Schlüssel im Quellcode sichtbar.
 
 ### Die Lösung: Backend-Proxy (Empfohlen für Produktion)
 Um Ihre API-Quota und Kosten zu schützen, sollten Sie im produktiven Einsatz einen **Proxy** verwenden. Das Frontend sendet den Text an Ihren Server, und *nur* Ihr Server kennt den API-Schlüssel und kommuniziert mit Google.
@@ -134,7 +183,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
 
   // 2. API Key sicher auf dem Server nutzen
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.VITE_GEMINI_API_KEY });
 
   try {
     // 3. Anfrage an Gemini weiterleiten
@@ -171,8 +220,12 @@ Folgen Sie diesen Schritten für eine sichere lokale Testumgebung.
 2.  **Environment konfigurieren:**
     Erstellen Sie eine `.env` Datei im Hauptverzeichnis:
     ```env
-    API_KEY=Ihre_Gemini_API_Key_Hier
+    VITE_GEMINI_API_KEY=Ihre_Gemini_API_Key_Hier
     ```
+
+    **API-Key besorgen (kostenlos):**
+    Besuchen Sie [Google AI Studio](https://aistudio.google.com/apikey), melden Sie sich mit Ihrem Google-Konto an und erstellen Sie einen kostenlosen API-Key.
+
     *Hinweis: Die `.env` Datei ist in `.gitignore` und wird nicht veröffentlicht.*
     *Tipp: Lassen Sie den API_KEY leer, um den **Offline-Modus** zu testen.*
 
@@ -180,7 +233,43 @@ Folgen Sie diesen Schritten für eine sichere lokale Testumgebung.
     ```bash
     npm run dev
     ```
-    Öffnen Sie `http://localhost:5173`.
+    Der Browser öffnet sich automatisch unter `http://localhost:5173`.
+
+---
+
+## 🚀 Schnellstart vom Desktop (Windows)
+
+Sie können EchoForge Bridge bequem per Doppelklick vom Desktop starten – ganz ohne Terminal.
+
+### Schritt-für-Schritt-Anleitung
+
+1.  **Navigieren Sie zum Projektordner** (z.B. im Windows Explorer).
+
+2.  **Erstellen Sie eine Desktop-Verknüpfung:**
+    - Rechtsklick auf `start_bridge.bat`
+    - Wählen Sie **"Senden an"** → **"Desktop (Verknüpfung erstellen)"**
+
+3.  **Starten per Doppelklick:**
+    - Klicken Sie auf die neue Desktop-Verknüpfung
+    - Ein Konsolenfenster öffnet sich
+    - Der Browser startet automatisch mit der Anwendung
+
+4.  **Beenden:**
+    - **Option A:** Schließen Sie das Konsolenfenster direkt (Strg+C oder X-Button)
+    - **Option B:** Doppelklick auf `stop_bridge.bat` (beendet Port 5173 sauber)
+
+### ⚠️ Wichtiger Hinweis
+
+> **Die Original-Dateien (`start_bridge.bat`, `stop_bridge.bat`) dürfen NICHT verschoben werden!**
+>
+> Erstellen Sie immer nur **Verknüpfungen** auf dem Desktop. Die Batch-Dateien müssen im Projektordner bleiben, da sie relative Pfade nutzen.
+
+### Enthaltene Convenience-Scripts
+
+| Datei | Funktion |
+|-------|----------|
+| `start_bridge.bat` | Startet den Entwicklungsserver, öffnet Browser automatisch |
+| `stop_bridge.bat` | Beendet den Server (Port 5173) sauber im Hintergrund |
 
 ---
 
