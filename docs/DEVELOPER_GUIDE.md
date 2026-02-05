@@ -965,6 +965,40 @@ Das `--open` Flag bewirkt, dass Vite den Standard-Browser automatisch öffnet, s
 
 ---
 
+## 📡 System Architecture & Ports
+
+### Port-Reservierungen
+
+Die EchoForge Bridge ist Teil eines Multi-App-Workflows. Um Konflikte zu vermeiden, sind folgende Ports fest zugewiesen:
+
+| Anwendung | Port | Status |
+|:----------|:-----|:-------|
+| **EchoForge Bridge** | **5173** | **Standard (Vite Default)** |
+| Audiobook Studio | 3001 | Externe App – **Nicht verwenden!** |
+
+### Wichtige Konfigurationsdateien
+
+| Datei | Port-Referenz | Zweck |
+|:------|:--------------|:------|
+| `vite.config.ts` | `server: { port: 5173 }` | Dev-Server-Port |
+| `stop_bridge.bat` | `npx kill-port 5173` | Cleanup-Script |
+
+> **⚠️ Synchronisations-Regel:**
+>
+> Falls der Port geändert werden muss, müssen **beide** Dateien (`vite.config.ts` und `stop_bridge.bat`) aktualisiert werden, um Inkonsistenzen zu vermeiden.
+
+### Port-Konflikt-Diagnose
+
+```bash
+# Prüfen, welcher Prozess Port 5173 belegt (Windows):
+netstat -ano | findstr :5173
+
+# Prozess beenden (mit PID aus obigem Befehl):
+taskkill /PID <PID> /F
+```
+
+---
+
 ## 📦 Build & Deployment
 
 **Entwicklung:**
@@ -1012,4 +1046,4 @@ VITE_GEMINI_API_KEY=your_key_here  # Optional (Offline-Modus wenn leer)
 ---
 
 **Stand:** 2026-02-05
-**Version:** EchoForge Bridge v2.3.1 (Desktop Convenience Scripts)
+**Version:** EchoForge Bridge v2.3.2 (Port Architecture Fix)

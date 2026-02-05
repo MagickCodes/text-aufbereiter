@@ -296,3 +296,10 @@ Wir legen großen Wert auf Datensparsamkeit:
 
 **Problem: API Fehler 429 (Quota)**
 *Lösung:* Das Limit der kostenlosen Gemini API ist erreicht. Warten Sie einige Minuten oder verwenden Sie einen API-Key mit Pay-as-you-go Abrechnung. Alternativ nutzen Sie den Offline-Modus (API-Key entfernen).
+
+**Problem: Server startet nicht / Port bereits belegt**
+*Lösung:* Port 5173 wird möglicherweise von einem anderen Prozess verwendet. Prüfen Sie dies mit:
+```bash
+netstat -ano | findstr :5173
+```
+Falls ein Prozess gefunden wird, beenden Sie ihn mit `taskkill /PID <PID> /F` oder nutzen Sie `stop_bridge.bat`.
