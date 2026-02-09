@@ -42,6 +42,7 @@ export interface CleaningOptions {
   removeTableOfContents?: boolean;
   removeReferences?: boolean;
   correctTypography?: boolean;
+  applyPhoneticCorrections?: boolean; // Phonetic fixes for TTS (e.g., "Chakra" → "Tschakra")
   customReplacements?: CustomReplacement[];
   customInstruction?: string;
   pauseConfig?: PauseConfiguration; // Optional pause injection settings

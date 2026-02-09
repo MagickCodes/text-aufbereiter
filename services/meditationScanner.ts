@@ -15,24 +15,106 @@ import { DetectedPause } from '../types';
 const DEFAULT_PAUSE_DURATION = 15; // Default pause duration in seconds for meditation scripts
 
 /**
+ * Extracts duration in seconds from a pause line.
+ *
+ * Smart parsing of time specifications:
+ * - "14 Minuten" → 840 seconds
+ * - "10 Sekunden" → 10 seconds
+ * - "2 Stunden" → 7200 seconds
+ * - "1,5 Minuten" → 90 seconds
+ * - No number found → returns default
+ *
+ * @param lineText - The pause line text to analyze
+ * @returns Duration in seconds (or DEFAULT_PAUSE_DURATION if not found)
+ */
+function extractDurationFromText(lineText: string): number {
+    if (!lineText) return DEFAULT_PAUSE_DURATION;
+
+    const lowerText = lineText.toLowerCase();
+
+    // Pattern: number (with optional decimal comma/point) followed by time unit
+    // Matches: "14 minuten", "10 sekunden", "1,5 minuten", "2.5 stunden", "eine Minute"
+    const timePatterns = [
+        // Numeric patterns: "14 Minuten", "10 Sekunden", "1,5 Minuten"
+        { regex: /(\d+(?:[.,]\d+)?)\s*(?:reale?\s+)?(?:minuten?|min\.?)/i, multiplier: 60 },
+        { regex: /(\d+(?:[.,]\d+)?)\s*(?:reale?\s+)?(?:sekunden?|sek\.?|s\b)/i, multiplier: 1 },
+        { regex: /(\d+(?:[.,]\d+)?)\s*(?:reale?\s+)?(?:stunden?|std\.?|h\b)/i, multiplier: 3600 },
+
+        // Word patterns: "eine Minute", "zwei Minuten", "drei Sekunden"
+        { regex: /\b(eine?|eins)\s+(?:reale?\s+)?minuten?/i, value: 60 },
+        { regex: /\bzwei\s+(?:reale?\s+)?minuten?/i, value: 120 },
+        { regex: /\bdrei\s+(?:reale?\s+)?minuten?/i, value: 180 },
+        { regex: /\bvier\s+(?:reale?\s+)?minuten?/i, value: 240 },
+        { regex: /\bfünf\s+(?:reale?\s+)?minuten?/i, value: 300 },
+        { regex: /\bzehn\s+(?:reale?\s+)?minuten?/i, value: 600 },
+        { regex: /\bfünfzehn\s+(?:reale?\s+)?minuten?/i, value: 900 },
+        { regex: /\bzwanzig\s+(?:reale?\s+)?minuten?/i, value: 1200 },
+        { regex: /\bdreißig\s+(?:reale?\s+)?minuten?/i, value: 1800 },
+
+        // Word patterns for seconds
+        { regex: /\b(eine?|eins)\s+(?:reale?\s+)?sekunden?/i, value: 1 },
+        { regex: /\bzwei\s+(?:reale?\s+)?sekunden?/i, value: 2 },
+        { regex: /\bdrei\s+(?:reale?\s+)?sekunden?/i, value: 3 },
+        { regex: /\bfünf\s+(?:reale?\s+)?sekunden?/i, value: 5 },
+        { regex: /\bzehn\s+(?:reale?\s+)?sekunden?/i, value: 10 },
+        { regex: /\bzwanzig\s+(?:reale?\s+)?sekunden?/i, value: 20 },
+        { regex: /\bdreißig\s+(?:reale?\s+)?sekunden?/i, value: 30 },
+    ];
+
+    for (const pattern of timePatterns) {
+        const match = lowerText.match(pattern.regex);
+        if (match) {
+            // If it's a fixed value pattern (word-based)
+            if ('value' in pattern) {
+                return pattern.value;
+            }
+
+            // If it's a numeric pattern with multiplier
+            if ('multiplier' in pattern && match[1]) {
+                // Handle both comma and point as decimal separator
+                const numStr = match[1].replace(',', '.');
+                const num = parseFloat(numStr);
+                if (!isNaN(num) && num > 0) {
+                    return Math.round(num * pattern.multiplier);
+                }
+            }
+        }
+    }
+
+    // Fallback: Check for any number in the text as a hint
+    // (useful for lines like "Pause 30" without unit - assume seconds)
+    const standaloneNumber = lowerText.match(/\b(\d+(?:[.,]\d+)?)\b/);
+    if (standaloneNumber && standaloneNumber[1]) {
+        const num = parseFloat(standaloneNumber[1].replace(',', '.'));
+        if (!isNaN(num) && num > 0 && num <= 300) {
+            // Reasonable range for seconds (up to 5 min)
+            return Math.round(num);
+        }
+    }
+
+    return DEFAULT_PAUSE_DURATION;
+}
+
+/**
  * Scans text for explicit pause/stage instructions.
  *
- * Detects lines that start with keywords like "PAUSE", "STILLE", "NACHSPÜREN"
- * or variations with adjectives (case-insensitive).
- * These are typically stage directions or meditation instructions.
+ * ENHANCED DETECTION (v2):
+ * - Detects lines that start with keywords like "PAUSE", "STILLE", "NACHSPÜREN"
+ * - Also detects stage directions like "Pause für X Minuten..." anywhere in line
+ * - Smart time extraction: "14 Minuten" → 840 seconds
  *
  * Pattern Recognition:
  * - Keywords: PAUSE, STILLE, NACHSPÜREN at start of line (with optional whitespace)
  * - Optional adjective prefix: KURZE, LANGE, KLEINE, GROSSE
- * - May be followed by comma, colon, or space
- * - Rest of line is the instruction/description
+ * - Extended patterns: "Pause für...", "(Pause...)", "[Pause...]"
+ * - Time extraction from context
  *
  * Examples:
- * - "PAUSE, um tief einzuatmen"
- * - "KURZE PAUSE für drei Atemzüge"
- * - "LANGE STILLE: genießen"
- * - "NACHSPÜREN"
- * - "Kurze Stille"
+ * - "PAUSE, um tief einzuatmen" → default 15s
+ * - "KURZE PAUSE für drei Atemzüge" → default 15s
+ * - "LANGE STILLE: genießen" → default 15s
+ * - "Pause für 14 reale Minuten..." → 840s
+ * - "(Pause: 10 Sekunden)" → 10s
  *
  * @param text - The input text to scan
  * @returns Array of detected pause locations with metadata
@@ -43,34 +125,72 @@ export function scanForExplicitPauses(text: string): DetectedPause[] {
     const lines = text.split('\n');
     const detectedPauses: DetectedPause[] = [];
 
-    // Regex: Optional adjective (KURZE/LANGE/KLEINE/GROSSE) + keyword (PAUSE/STILLE/NACHSPÜREN) + optional separator + rest
-    // Case-insensitive to catch all variations
-    const pauseRegex = /^(?:(KURZE|LANGE|KLEINE|GROSSE)\s+)?(PAUSE|STILLE|NACHSPÜREN)[\s:,]*(.*)$/i;
+    // Primary Regex: Lines STARTING with pause keywords
+    // Optional adjective (KURZE/LANGE/KLEINE/GROSSE) + keyword (PAUSE/STILLE/NACHSPÜREN)
+    const primaryPauseRegex = /^(?:(KURZE|LANGE|KLEINE|GROSSE)\s+)?(PAUSE|STILLE|NACHSPÜREN)[\s:,]*(.*)$/i;
+
+    // Extended Regex: Lines CONTAINING pause patterns (stage directions)
+    // Matches: "Pause für...", "(Pause:...)", "[Pause ...]", "...eine Pause von..."
+    const extendedPauseRegex = /(?:^|\s|\(|\[)(pause)\s+(?:für|von|:)?\s*(.+?)(?:\)|\]|$)/i;
+
+    // Stage direction patterns in parentheses/brackets
+    const stageDirectionRegex = /^[\s]*[\(\[]\s*(pause|stille|nachspüren)[^\)\]]*[\)\]]\s*$/i;
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const trimmedLine = line.trim();
 
-        const pauseMatch = pauseRegex.exec(trimmedLine);
+        // Skip empty lines
+        if (!trimmedLine) continue;
 
-        if (pauseMatch) {
-            const adjective = pauseMatch[1] || ''; // e.g., "KURZE" or empty
-            const keyword = pauseMatch[2] || 'PAUSE'; // e.g., "PAUSE", "STILLE", "NACHSPÜREN"
-            const restOfLine = pauseMatch[3]?.trim() || '';
+        let matched = false;
+        let instruction = '';
+        let suggestedDuration = DEFAULT_PAUSE_DURATION;
 
-            // Build instruction from adjective + keyword + rest (for display)
-            let instruction: string;
+        // Try primary pattern first (lines starting with PAUSE etc.)
+        const primaryMatch = primaryPauseRegex.exec(trimmedLine);
+        if (primaryMatch) {
+            matched = true;
+            const adjective = primaryMatch[1] || '';
+            const keyword = primaryMatch[2] || 'PAUSE';
+            const restOfLine = primaryMatch[3]?.trim() || '';
+
             if (restOfLine) {
                 instruction = adjective ? `${adjective} ${keyword} – ${restOfLine}` : `${keyword} – ${restOfLine}`;
             } else {
                 instruction = adjective ? `${adjective} ${keyword}` : keyword;
             }
 
+            // Try to extract duration from the full line
+            suggestedDuration = extractDurationFromText(trimmedLine);
+        }
+
+        // Try extended pattern (lines containing "Pause für...")
+        if (!matched) {
+            const extendedMatch = extendedPauseRegex.exec(trimmedLine);
+            if (extendedMatch) {
+                matched = true;
+                instruction = `PAUSE – ${trimmedLine}`;
+                suggestedDuration = extractDurationFromText(trimmedLine);
+            }
+        }
+
+        // Try stage direction in brackets/parentheses
+        if (!matched) {
+            const stageMatch = stageDirectionRegex.exec(trimmedLine);
+            if (stageMatch) {
+                matched = true;
+                instruction = `PAUSE – ${trimmedLine}`;
+                suggestedDuration = extractDurationFromText(trimmedLine);
+            }
+        }
+
+        if (matched) {
             const detectedPause: DetectedPause = {
-                id: `pause-${i}-${Date.now()}`, // Unique ID
-                lineNumber: i + 1, // Human-readable line number (1-based)
-                originalText: line, // Keep original formatting (whitespace)
-                duration: DEFAULT_PAUSE_DURATION,
+                id: `pause-${i}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                lineNumber: i + 1,
+                originalText: line,
+                duration: suggestedDuration,
                 instruction: instruction
             };
 
@@ -146,7 +266,7 @@ export function validateMeditationPauses(pauses: DetectedPause[]): string[] {
     const warnings: string[] = [];
 
     if (pauses.length === 0) {
-        warnings.push('Keine Pausen gefunden. Stellen Sie sicher, dass Zeilen mit "PAUSE", "STILLE" oder "NACHSPÜREN" (ggf. mit Adjektiv wie "KURZE/LANGE") beginnen.');
+        warnings.push('Keine Pausen gefunden. Stellen Sie sicher, dass Zeilen mit "PAUSE", "STILLE" oder "NACHSPÜREN" beginnen, oder Muster wie "Pause für X Minuten" enthalten.');
         return warnings;
     }
 
@@ -156,10 +276,18 @@ export function validateMeditationPauses(pauses: DetectedPause[]): string[] {
         warnings.push(`${shortPauses.length} Pause(n) sind sehr kurz (< 2s). Für Meditationen empfohlen: 5-30s.`);
     }
 
-    // Check for very long pauses (> 60s might be unintentional)
-    const longPauses = pauses.filter(p => p.duration > 60);
-    if (longPauses.length > 0) {
-        warnings.push(`${longPauses.length} Pause(n) sind sehr lang (> 60s). Bitte überprüfen Sie die Zeitangaben.`);
+    // Check for extracted durations (informational, not a warning)
+    const extractedPauses = pauses.filter(p => p.duration !== 15); // 15 is default
+    if (extractedPauses.length > 0) {
+        // This is informational, show as a positive note
+        // Note: We don't add this as a "warning" but could be shown differently in UI
+    }
+
+    // Check for very long pauses (> 1800s = 30 min might be unintentional)
+    // Extended threshold since we now support "14 Minuten" etc.
+    const veryLongPauses = pauses.filter(p => p.duration > 1800);
+    if (veryLongPauses.length > 0) {
+        warnings.push(`${veryLongPauses.length} Pause(n) sind sehr lang (> 30 Min). Bitte überprüfen Sie die Zeitangaben.`);
     }
 
     return warnings;
@@ -186,6 +314,7 @@ export function getMeditationSummary(pauses: DetectedPause[]): string {
 /**
  * Checks if text is suitable for meditation mode processing.
  * Looks for indicators like "PAUSE", "STILLE", "NACHSPÜREN" keywords (with optional adjectives).
+ * Also detects extended patterns like "Pause für X Minuten".
  *
  * @param text - Text to analyze
  * @returns True if text contains meditation-style pause/stage markers
@@ -193,11 +322,22 @@ export function getMeditationSummary(pauses: DetectedPause[]): string {
 export function isMeditationScript(text: string): boolean {
     if (!text) return false;
 
-    // Check if text contains lines starting with keywords (PAUSE/STILLE/NACHSPÜREN)
-    // with optional adjectives (KURZE/LANGE/KLEINE/GROSSE)
     const lines = text.split('\n');
-    const pausePattern = /^\s*(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?(?:PAUSE|STILLE|NACHSPÜREN)[\s:,]?/i;
-    const pauseLines = lines.filter(line => pausePattern.test(line));
+
+    // Primary pattern: Lines starting with keywords
+    const primaryPattern = /^\s*(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?(?:PAUSE|STILLE|NACHSPÜREN)[\s:,]?/i;
+
+    // Extended pattern: "Pause für...", "(Pause...)"
+    const extendedPattern = /(?:^|\s|\(|\[)pause\s+(?:für|von|:)/i;
+
+    // Stage direction in brackets
+    const bracketPattern = /^[\s]*[\(\[]\s*(?:pause|stille|nachspüren)/i;
+
+    const pauseLines = lines.filter(line =>
+        primaryPattern.test(line) ||
+        extendedPattern.test(line) ||
+        bracketPattern.test(line)
+    );
 
     return pauseLines.length > 0;
 }

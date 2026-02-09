@@ -1,7 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { CleaningOptions, AiProvider, DetailedAction, TokenUsage } from "../types";
-import { COMMON_ABBREVIATIONS, applyCustomReplacements } from "./utils";
+import { COMMON_ABBREVIATIONS, applyCustomReplacements, applyPhoneticCorrections } from "./utils";
 
 const providerNames: Record<AiProvider, string> = {
     gemini: "Google Gemini",
@@ -726,6 +726,12 @@ export async function processChunkWithWatchdog(
             cleanedContent = restoreStageDirections(cleanedContent, protectedLines);
         }
 
+        // PHONETIC CORRECTIONS: Apply at the very end of the pipeline (if enabled)
+        // This ensures TTS pronounces words correctly (e.g., "Chakra" → "Tschakra")
+        if (options.applyPhoneticCorrections !== false) {
+            cleanedContent = applyPhoneticCorrections(cleanedContent);
+        }
+
         return cleanedContent;
     };
 
@@ -737,6 +743,10 @@ export async function processChunkWithWatchdog(
         for await (const part of stream) {
             if (signal.aborted) throw new Error('Aborted');
             chunkContent += part;
+        }
+        // PHONETIC CORRECTIONS: Also apply in offline fallback (if enabled)
+        if (options.applyPhoneticCorrections !== false) {
+            chunkContent = applyPhoneticCorrections(chunkContent);
         }
         return chunkContent;
     }

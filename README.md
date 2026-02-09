@@ -16,6 +16,11 @@ Die Anwendung arbeitet hybrid: Sie nutzt standardmäßig modernste **KI-Modelle*
   - **Smart Rate-Limit:** Automatische Drosselung (2s Bremse) zur Vermeidung von 429-Fehlern.
   - **Offline (Lokal):** Schnelle, regelbasierte Bereinigung (Regex) ohne Datenversand.
   - **⏹️ Abbruch-Funktion (NEU):** Laufende KI-Verarbeitung kann jederzeit über den "Abbrechen"-Button gestoppt werden – sofortige Rückkehr zur Konfiguration ohne Datenverlust.
+- **🗣️ Phonetische Optimierung (NEU v2.4):** Automatische Korrektur von TTS-Stolpersteinen für perfekte Aussprache.
+  - **Beispiele:** "Chakra" → "Tschakra", "Regisseur" → "Reschissör", "Manche" → "Mannche"
+  - **Intelligent:** Schützt System-Tags wie `[PAUSE Xs]` vor Ersetzungen
+  - **Erweiterbar:** Eigene Wörter können in `PHONETIC_MAPPINGS` (utils.ts) hinzugefügt werden
+  - **Konfigurierbar:** Toggle im UI unter "Weitere Optionen" (Standard: AN)
 - **🧠 Intelligente Abkürzungserweiterung:** Verwandelt 60+ kryptische Kürzel automatisch in flüssiges Deutsch für optimalen Vorlesefluss.
   - *Allgemein:* z.B. → zum Beispiel, d.h. → das heißt, ggf. → gegebenenfalls, bzw. → beziehungsweise, usw. → und so weiter
   - *Referenzen:* vgl. → vergleiche, s.o. → siehe oben, s.u. → siehe unten, i.d.R. → in der Regel
@@ -47,6 +52,19 @@ Die Anwendung arbeitet hybrid: Sie nutzt standardmäßig modernste **KI-Modelle*
       - `NACHSPÜREN`
       - `KLEINE PAUSE`
       - `GROSSE PAUSE zum Nachdenken`
+  - **🕐 Intelligente Zeiterkennung (NEU v2.4):** Der Scanner extrahiert automatisch Zeitangaben aus dem Text!
+    - **Numerisch:** "Pause für 14 reale Minuten" → schlägt automatisch **840 Sekunden** vor
+    - **Einheiten:** Erkennt Minuten, Sekunden und Stunden (inkl. Abkürzungen wie "Min.", "Sek.")
+    - **Zahlwörter:** "fünf Minuten" → 300s, "dreißig Sekunden" → 30s
+    - **Dezimalzahlen:** "1,5 Minuten" oder "2.5 Stunden" werden korrekt berechnet
+    - **Fallback:** Wenn keine Zeit erkennbar ist, wird der Standard (15s) vorgeschlagen
+    - **Beispiele:**
+      - `"Pause für 14 reale Minuten..."` → **840s** vorgeschlagen
+      - `"STILLE: fünf Minuten genießen"` → **300s** vorgeschlagen
+      - `"(Pause: 10 Sekunden)"` → **10s** vorgeschlagen
+  - **Erweiterte Erkennung (NEU v2.4):** Erkennt jetzt auch Stage Directions in Klammern:
+    - `(Pause für 30 Sekunden)` → Wird erkannt und vorgeschlagen
+    - `[Pause: 2 Minuten]` → Wird erkannt und vorgeschlagen
   - **Workflow:**
     1. Text hochladen mit PAUSE-Zeilen
     2. Interaktive Review-Oberfläche öffnet sich automatisch
@@ -61,6 +79,9 @@ Die Anwendung arbeitet hybrid: Sie nutzt standardmäßig modernste **KI-Modelle*
       **Nachher:** `KURZE PAUSE, um tief einzuatmen [PAUSE 10s]` *(Dauer vom User festgelegt)*
       **Vorher:** `STILLE, um dem Klang nachzuspüren`
       **Nachher:** `STILLE, um dem Klang nachzuspüren [PAUSE 20s]`
+    - *Intelligente Zeiterkennung (NEU v2.4):*
+      **Vorher:** `Pause für 14 reale Minuten...`
+      **Nachher:** `Pause für 14 reale Minuten... [PAUSE 840s]` *(automatisch aus Text erkannt!)*
   - **Intelligenz:** Originaltext bleibt exakt erhalten (Zero-Hallucination Policy), TTS-Engine liest die Anweisung vor UND pausiert dann
 - **Kostentransparenz:** Live-Schätzung der benötigten Tokens und der zu erwartenden API-Kosten (in Cent) *vor* dem Start.
 - **Integrierte Vorlese-Funktion (TTS):** Überprüfen Sie das Ergebnis sofort akustisch mit der integrierten Browser-Sprachausgabe ("Roboter-Stimme"), um den Lesefluss zu testen.

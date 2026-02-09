@@ -27,6 +27,7 @@ export const ConfigurationView: React.FC<ConfigurationViewProps> = ({ rawText, o
         removeTableOfContents: true,
         removeReferences: true,
         correctTypography: true,
+        applyPhoneticCorrections: true, // Default ON for better TTS pronunciation
         customReplacements: [],
         processingMode: 'standard', // Default to standard audiobook mode
         pauseConfig: {
@@ -398,6 +399,20 @@ export const ConfigurationView: React.FC<ConfigurationViewProps> = ({ rawText, o
                                 <div>
                                     <span className="block text-gray-200 font-medium">Typografie korrigieren</span>
                                     <span className="block text-xs text-gray-400">Entfernt doppelte Leerzeichen und korrigiert falsche Satzzeichensetzung (Plenken).</span>
+                                </div>
+                            </label>
+
+                            {/* Phonetic corrections - always visible */}
+                            <label className="flex items-start gap-3 cursor-pointer p-2 hover:bg-gray-700/30 rounded-lg transition-colors">
+                                <input
+                                    type="checkbox"
+                                    checked={options.applyPhoneticCorrections}
+                                    onChange={(e) => setOptions(prev => ({ ...prev, applyPhoneticCorrections: e.target.checked }))}
+                                    className="mt-1 rounded text-brand-primary focus:ring-brand-secondary"
+                                />
+                                <div>
+                                    <span className="block text-gray-200 font-medium">Phonetische Korrektur</span>
+                                    <span className="block text-xs text-gray-400">Passt Wörter für korrekte TTS-Aussprache an (z.B. "Chakra" → "Tschakra", "Regisseur" → "Reschissör").</span>
                                 </div>
                             </label>
 

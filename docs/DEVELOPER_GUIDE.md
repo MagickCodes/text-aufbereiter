@@ -440,6 +440,63 @@ Output Text (with tags)
 
 **Wichtige Funktionen:**
 
+---
+
+#### **🔊 Phonetic Engine (NEU v2.4)**
+
+Die Phonetic Engine korrigiert Wörter, die von TTS-Systemen (Google TTS) falsch ausgesprochen werden.
+
+**Konstante: `PHONETIC_MAPPINGS`**
+
+```typescript
+export const PHONETIC_MAPPINGS: Record<string, string> = {
+    // Sanskrit/Yoga terms
+    "Chakra": "Tschakra",
+    "Chakren": "Tschakren",
+    "Chakras": "Tschakras",
+
+    // French loanwords
+    "Regisseur": "Reschissör",
+    "Regisseure": "Reschissöre",
+    "Regime": "Reschim",
+    "Regie": "Reschi",
+
+    // German pronunciation quirks
+    "Manche": "Mannche",
+};
+```
+
+**Neue Wörter hinzufügen:**
+
+1. Öffne `services/utils.ts`
+2. Füge zur `PHONETIC_MAPPINGS` Konstante hinzu:
+   ```typescript
+   "OriginalWort": "PhonetischscheSchreibweise",
+   ```
+3. **Wichtig:** Der Key ist case-sensitive, aber die Ersetzung ist case-insensitive mit Kapitalisierungs-Erhaltung
+
+**Funktion: `applyPhoneticCorrections(text: string): string`**
+
+**Sicherheitsmechanismus:**
+1. **Schützt System-Tags:** `[PAUSE Xs]` und `[[PROTECTED_*]]` werden vor Ersetzung maskiert
+2. **Word-Boundary-Matching:** Nur ganze Wörter werden ersetzt (`\b...\b`)
+3. **Case-Preservation:** "CHAKRA" → "TSCHAKRA", "chakra" → "tschakra"
+
+**Integration in Pipeline:**
+- Wird am **Ende** von `processChunkWithWatchdog()` aufgerufen
+- Funktioniert sowohl im Online- als auch Offline-Modus
+- Kann per Toggle im UI deaktiviert werden (`options.applyPhoneticCorrections`)
+
+**Code-Referenz:**
+```typescript
+// geminiService.ts - Line ~730
+if (options.applyPhoneticCorrections !== false) {
+    cleanedContent = applyPhoneticCorrections(cleanedContent);
+}
+```
+
+---
+
 #### **smartSplitText(text: string, targetChunkSize: number): string[]**
 Teilt Text in Chunks, respektiert dabei natürliche Grenzen:
 1. Absätze (`\n\n`) – Höchste Priorität
@@ -786,9 +843,79 @@ IDLE
 
 ### **meditationScanner.ts – Service Details**
 
-**scanForExplicitPauses()**
+---
 
-**Pattern (erweitert für v2.2):**
+#### **🕐 extractDurationFromText() (NEU v2.4)**
+
+**Zweck:** Extrahiert Zeitangaben aus Pausenzeilen und berechnet die Dauer in Sekunden.
+
+**Funktion:**
+```typescript
+function extractDurationFromText(lineText: string): number
+```
+
+**Unterstützte Formate:**
+
+| Format | Beispiel | Ergebnis |
+|--------|----------|----------|
+| **Numerisch + Einheit** | "14 Minuten" | 840s |
+| **Mit "reale"** | "14 reale Minuten" | 840s |
+| **Dezimalzahlen (Komma)** | "1,5 Minuten" | 90s |
+| **Dezimalzahlen (Punkt)** | "2.5 Stunden" | 9000s |
+| **Sekunden** | "30 Sekunden" | 30s |
+| **Abkürzungen** | "5 Min.", "10 Sek." | 300s, 10s |
+| **Zahlwörter** | "fünf Minuten" | 300s |
+| **Zahlwörter (Sekunden)** | "dreißig Sekunden" | 30s |
+| **Standalone Zahl** | "Pause 30" | 30s (als Sekunden interpretiert) |
+
+**Regex-Patterns (Auszug):**
+
+```typescript
+const timePatterns = [
+    // Numerische Patterns
+    { regex: /(\d+(?:[.,]\d+)?)\s*(?:reale?\s+)?(?:minuten?|min\.?)/i, multiplier: 60 },
+    { regex: /(\d+(?:[.,]\d+)?)\s*(?:reale?\s+)?(?:sekunden?|sek\.?|s\b)/i, multiplier: 1 },
+    { regex: /(\d+(?:[.,]\d+)?)\s*(?:reale?\s+)?(?:stunden?|std\.?|h\b)/i, multiplier: 3600 },
+
+    // Zahlwort-Patterns (Beispiele)
+    { regex: /\bfünf\s+(?:reale?\s+)?minuten?/i, value: 300 },
+    { regex: /\bzehn\s+(?:reale?\s+)?minuten?/i, value: 600 },
+    { regex: /\bdreißig\s+(?:reale?\s+)?sekunden?/i, value: 30 },
+    // ... weitere Zahlwörter
+];
+```
+
+**Unterstützte Zahlwörter:**
+- **Minuten:** eine, zwei, drei, vier, fünf, zehn, fünfzehn, zwanzig, dreißig
+- **Sekunden:** eine, zwei, drei, fünf, zehn, zwanzig, dreißig
+
+**Fallback-Logik:**
+1. Wenn keine Zeit erkannt wird → Suche nach standalone Zahl (≤300)
+2. Wenn nichts gefunden → Rückgabe `DEFAULT_PAUSE_DURATION` (15s)
+
+---
+
+#### **scanForExplicitPauses() (Enhanced v2.4)**
+
+**Drei-Stufen-Erkennung:**
+
+```typescript
+// 1. Primäres Pattern: Zeilen die MIT Keyword beginnen
+const primaryPauseRegex = /^(?:(KURZE|LANGE|KLEINE|GROSSE)\s+)?(PAUSE|STILLE|NACHSPÜREN)[\s:,]*(.*)$/i;
+
+// 2. Erweitertes Pattern: "Pause für..." irgendwo in der Zeile
+const extendedPauseRegex = /(?:^|\s|\(|\[)(pause)\s+(?:für|von|:)?\s*(.+?)(?:\)|\]|$)/i;
+
+// 3. Stage Directions in Klammern
+const stageDirectionRegex = /^[\s]*[\(\[]\s*(pause|stille|nachspüren)[^\)\]]*[\)\]]\s*$/i;
+```
+
+**Neu erkannte Formate (v2.4):**
+- ✅ `"Pause für 14 reale Minuten..."` → Erkannt mit 840s
+- ✅ `"(Pause: 10 Sekunden)"` → Erkannt mit 10s
+- ✅ `"[Pause 5 Minuten]"` → Erkannt mit 300s
+
+**Pattern (Primär - wie bisher):**
 ```regex
 /^(?:(KURZE|LANGE|KLEINE|GROSSE)\s+)?(PAUSE|STILLE|NACHSPÜREN)[\s:,]*(.*)$/i
 ```
@@ -1045,5 +1172,5 @@ VITE_GEMINI_API_KEY=your_key_here  # Optional (Offline-Modus wenn leer)
 
 ---
 
-**Stand:** 2026-02-05
-**Version:** EchoForge Bridge v2.3.2 (Port Architecture Fix)
+**Stand:** 2026-02-09
+**Version:** EchoForge Bridge v2.4.0 (Intelligent Pre-Processing)

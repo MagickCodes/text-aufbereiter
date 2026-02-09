@@ -237,6 +237,90 @@ export interface AbbreviationRule {
 import { CustomReplacement } from '../types';
 
 /**
+ * PHONETIC MAPPINGS for German TTS
+ *
+ * Google TTS often mispronounces foreign or unusual words.
+ * This mapping provides phonetically correct German spellings.
+ *
+ * Usage: Applied BEFORE final output, but AFTER AI cleaning.
+ * Important: Must NOT modify system tags like [PAUSE Xs].
+ */
+export const PHONETIC_MAPPINGS: Record<string, string> = {
+    // Sanskrit/Yoga terms
+    "Chakra": "Tschakra",
+    "Chakren": "Tschakren",
+    "Chakras": "Tschakras",
+
+    // French loanwords
+    "Regisseur": "Reschissör",
+    "Regisseure": "Reschissöre",
+    "Regime": "Reschim",
+    "Regie": "Reschi",
+
+    // German pronunciation quirks
+    "Manche": "Mannche",
+
+    // English loanwords (optional - extend as needed)
+    // "Challenge": "Tschällendsch",
+};
+
+/**
+ * Applies phonetic corrections for better TTS pronunciation.
+ *
+ * CRITICAL: This function must NOT modify content inside:
+ * - [PAUSE Xs] tags
+ * - [[PROTECTED_*]] placeholders
+ * - Any system markers
+ *
+ * @param text - The text to correct
+ * @returns Text with phonetic corrections applied
+ */
+export const applyPhoneticCorrections = (text: string): string => {
+    if (!text) return text;
+
+    let result = text;
+
+    // Extract and protect system tags before replacement
+    const protectedTags: string[] = [];
+
+    // Protect [PAUSE Xs] tags
+    result = result.replace(/\[PAUSE\s+[\d.]+s\]/gi, (match) => {
+        protectedTags.push(match);
+        return `__PHONETIC_PROTECTED_${protectedTags.length - 1}__`;
+    });
+
+    // Protect [[PROTECTED_*]] placeholders
+    result = result.replace(/\[\[PROTECTED_[^\]]+\]\]/g, (match) => {
+        protectedTags.push(match);
+        return `__PHONETIC_PROTECTED_${protectedTags.length - 1}__`;
+    });
+
+    // Apply phonetic mappings with word boundary matching
+    for (const [original, phonetic] of Object.entries(PHONETIC_MAPPINGS)) {
+        // Escape special regex characters in the original word
+        const escapedOriginal = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Use word boundary \b for whole-word matching, case-insensitive
+        const regex = new RegExp(`\\b${escapedOriginal}\\b`, 'gi');
+
+        // Preserve original case pattern (capitalize if original was capitalized)
+        result = result.replace(regex, (match) => {
+            // If the matched word starts with uppercase, capitalize replacement
+            if (match[0] === match[0].toUpperCase()) {
+                return phonetic.charAt(0).toUpperCase() + phonetic.slice(1);
+            }
+            return phonetic.toLowerCase();
+        });
+    }
+
+    // Restore protected tags
+    for (let i = 0; i < protectedTags.length; i++) {
+        result = result.replace(`__PHONETIC_PROTECTED_${i}__`, protectedTags[i]);
+    }
+
+    return result;
+};
+
+/**
  * Applies user-defined custom text replacements.
  * Case-insensitive global replacement.
  */
