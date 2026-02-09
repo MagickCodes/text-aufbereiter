@@ -125,16 +125,22 @@ export function scanForExplicitPauses(text: string): DetectedPause[] {
     const lines = text.split('\n');
     const detectedPauses: DetectedPause[] = [];
 
-    // Primary Regex: Lines STARTING with pause keywords
-    // Optional adjective (KURZE/LANGE/KLEINE/GROSSE) + keyword (PAUSE/STILLE/NACHSPÜREN)
-    const primaryPauseRegex = /^(?:(KURZE|LANGE|KLEINE|GROSSE)\s+)?(PAUSE|STILLE|NACHSPÜREN)[\s:,]*(.*)$/i;
+    // PRIMARY REGEX (v2.4.2): Lines STARTING with pause keywords
+    // More tolerant: Uses word boundary \b to catch ANY following text
+    // Matches: "PAUSE", "Pause für 14 Minuten...", "KURZE PAUSE, um..."
+    const primaryPauseRegex = /^(?:(KURZE|LANGE|KLEINE|GROSSE)\s+)?(PAUSE|STILLE|NACHSPÜREN)\b\s*(.*)$/i;
+
+    // SENTENCE REGEX (v2.4.2): Full sentences starting with "Pause für/von"
+    // Specifically catches: "Pause für 14 reale Minuten, um sein Chakrensystem zu energetisieren..."
+    // This is redundant with primary but ensures complex sentences are never missed
+    const sentencePauseRegex = /^(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?PAUSE\s+(?:für|von)\s+.+$/i;
 
     // Extended Regex: Lines CONTAINING pause patterns (stage directions)
-    // Matches: "Pause für...", "(Pause:...)", "[Pause ...]", "...eine Pause von..."
-    const extendedPauseRegex = /(?:^|\s|\(|\[)(pause)\s+(?:für|von|:)?\s*(.+?)(?:\)|\]|$)/i;
+    // Matches: "...eine Pause für...", "(Pause:...)", "[Pause ...]"
+    const extendedPauseRegex = /(?:^|\s|\(|\[)pause\s+(?:für|von|:)\s*.+(?:\)|\]|$)/i;
 
     // Stage direction patterns in parentheses/brackets
-    const stageDirectionRegex = /^[\s]*[\(\[]\s*(pause|stille|nachspüren)[^\)\]]*[\)\]]\s*$/i;
+    const stageDirectionRegex = /^[\s]*[\(\[]\s*(?:pause|stille|nachspüren)[^\)\]]*[\)\]]\s*$/i;
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
@@ -147,7 +153,7 @@ export function scanForExplicitPauses(text: string): DetectedPause[] {
         let instruction = '';
         let suggestedDuration = DEFAULT_PAUSE_DURATION;
 
-        // Try primary pattern first (lines starting with PAUSE etc.)
+        // Pattern 1: Primary pattern (lines starting with PAUSE/STILLE/NACHSPÜREN)
         const primaryMatch = primaryPauseRegex.exec(trimmedLine);
         if (primaryMatch) {
             matched = true;
@@ -161,28 +167,29 @@ export function scanForExplicitPauses(text: string): DetectedPause[] {
                 instruction = adjective ? `${adjective} ${keyword}` : keyword;
             }
 
-            // Try to extract duration from the full line
+            // Extract duration from the full line (e.g., "14 reale Minuten" → 840s)
             suggestedDuration = extractDurationFromText(trimmedLine);
         }
 
-        // Try extended pattern (lines containing "Pause für...")
-        if (!matched) {
-            const extendedMatch = extendedPauseRegex.exec(trimmedLine);
-            if (extendedMatch) {
-                matched = true;
-                instruction = `PAUSE – ${trimmedLine}`;
-                suggestedDuration = extractDurationFromText(trimmedLine);
-            }
+        // Pattern 2: Sentence pattern (backup for "Pause für X Minuten..." sentences)
+        if (!matched && sentencePauseRegex.test(trimmedLine)) {
+            matched = true;
+            instruction = `PAUSE – ${trimmedLine}`;
+            suggestedDuration = extractDurationFromText(trimmedLine);
         }
 
-        // Try stage direction in brackets/parentheses
-        if (!matched) {
-            const stageMatch = stageDirectionRegex.exec(trimmedLine);
-            if (stageMatch) {
-                matched = true;
-                instruction = `PAUSE – ${trimmedLine}`;
-                suggestedDuration = extractDurationFromText(trimmedLine);
-            }
+        // Pattern 3: Extended pattern (lines containing "Pause für..." anywhere)
+        if (!matched && extendedPauseRegex.test(trimmedLine)) {
+            matched = true;
+            instruction = `PAUSE – ${trimmedLine}`;
+            suggestedDuration = extractDurationFromText(trimmedLine);
+        }
+
+        // Pattern 4: Stage direction in brackets/parentheses
+        if (!matched && stageDirectionRegex.test(trimmedLine)) {
+            matched = true;
+            instruction = `PAUSE – ${trimmedLine}`;
+            suggestedDuration = extractDurationFromText(trimmedLine);
         }
 
         if (matched) {
@@ -324,10 +331,13 @@ export function isMeditationScript(text: string): boolean {
 
     const lines = text.split('\n');
 
-    // Primary pattern: Lines starting with keywords
-    const primaryPattern = /^\s*(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?(?:PAUSE|STILLE|NACHSPÜREN)[\s:,]?/i;
+    // Primary pattern (v2.4.2): Lines starting with keywords (uses word boundary)
+    const primaryPattern = /^\s*(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?(?:PAUSE|STILLE|NACHSPÜREN)\b/i;
 
-    // Extended pattern: "Pause für...", "(Pause...)"
+    // Sentence pattern: Full sentences like "Pause für 14 Minuten..."
+    const sentencePattern = /^\s*(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?PAUSE\s+(?:für|von)\s+/i;
+
+    // Extended pattern: "...eine Pause für...", stage directions
     const extendedPattern = /(?:^|\s|\(|\[)pause\s+(?:für|von|:)/i;
 
     // Stage direction in brackets
@@ -335,6 +345,7 @@ export function isMeditationScript(text: string): boolean {
 
     const pauseLines = lines.filter(line =>
         primaryPattern.test(line) ||
+        sentencePattern.test(line) ||
         extendedPattern.test(line) ||
         bracketPattern.test(line)
     );

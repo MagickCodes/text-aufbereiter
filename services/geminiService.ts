@@ -643,15 +643,19 @@ function protectStageDirections(text: string): { protectedText: string; original
     const lines = text.split('\n');
     const protectedLineIndices: Set<number> = new Set();
 
-    // Pattern 1: Lines STARTING with keywords (original pattern)
-    // Matches: "PAUSE, um...", "KURZE PAUSE für...", "STILLE", "NACHSPÜREN"
-    const primaryPattern = /^(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?(?:PAUSE|STILLE|NACHSPÜREN)[\s:,]?/i;
+    // Pattern 1 (v2.4.2): Lines STARTING with keywords (uses word boundary \b)
+    // Matches: "PAUSE", "Pause für 14 Minuten...", "KURZE PAUSE, um...", "STILLE", "NACHSPÜREN"
+    const primaryPattern = /^(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?(?:PAUSE|STILLE|NACHSPÜREN)\b/i;
 
-    // Pattern 2: Lines CONTAINING "Pause für/von/:" patterns (extended)
-    // Matches: "Pause für 14 reale Minuten", "eine Pause von 5 Sekunden"
+    // Pattern 2 (v2.4.2): Full sentences starting with "Pause für/von"
+    // Matches: "Pause für 14 reale Minuten, um sein Chakrensystem zu energetisieren..."
+    const sentencePattern = /^(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?PAUSE\s+(?:für|von)\s+/i;
+
+    // Pattern 3: Lines CONTAINING pause patterns anywhere (stage directions in text)
+    // Matches: "...eine Pause für...", "hier ist eine Pause von 5 Sekunden"
     const extendedPattern = /(?:^|\s)pause\s+(?:für|von|:)\s*/i;
 
-    // Pattern 3: Stage directions in brackets/parentheses
+    // Pattern 4: Stage directions in brackets/parentheses
     // Matches: "(Pause: 10 Sekunden)", "[Pause 5 Min]"
     const bracketPattern = /[\(\[]\s*(?:pause|stille|nachspüren)[^\)\]]*[\)\]]/i;
 
@@ -662,7 +666,9 @@ function protectStageDirections(text: string): { protectedText: string; original
 
         if (!trimmedLine) continue;
 
+        // Check all patterns - if ANY matches, protect the entire line
         if (primaryPattern.test(trimmedLine) ||
+            sentencePattern.test(trimmedLine) ||
             extendedPattern.test(trimmedLine) ||
             bracketPattern.test(trimmedLine)) {
             protectedLineIndices.add(i);
