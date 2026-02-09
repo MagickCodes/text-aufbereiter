@@ -895,29 +895,37 @@ const timePatterns = [
 
 ---
 
-#### **scanForExplicitPauses() (Enhanced v2.4)**
+#### **scanForExplicitPauses() (Enhanced v2.4.2)**
 
-**Drei-Stufen-Erkennung:**
+**Vier-Stufen-Erkennung (v2.4.2 - Tolerantere Patterns):**
 
 ```typescript
-// 1. Primäres Pattern: Zeilen die MIT Keyword beginnen
-const primaryPauseRegex = /^(?:(KURZE|LANGE|KLEINE|GROSSE)\s+)?(PAUSE|STILLE|NACHSPÜREN)[\s:,]*(.*)$/i;
+// 1. Primäres Pattern (v2.4.2): Zeilen die MIT Keyword beginnen
+// Nutzt Word-Boundary \b statt [\s:,]* für robustere Erkennung
+const primaryPauseRegex = /^(?:(KURZE|LANGE|KLEINE|GROSSE)\s+)?(PAUSE|STILLE|NACHSPÜREN)\b\s*(.*)$/i;
 
-// 2. Erweitertes Pattern: "Pause für..." irgendwo in der Zeile
-const extendedPauseRegex = /(?:^|\s|\(|\[)(pause)\s+(?:für|von|:)?\s*(.+?)(?:\)|\]|$)/i;
+// 2. Satz-Pattern (NEU v2.4.2): Vollständige Sätze wie "Pause für X Minuten..."
+// Garantiert Erkennung komplexer Sätze wie "Pause für 14 reale Minuten, um sein Chakrensystem zu energetisieren..."
+const sentencePauseRegex = /^(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?PAUSE\s+(?:für|von)\s+.+$/i;
 
-// 3. Stage Directions in Klammern
-const stageDirectionRegex = /^[\s]*[\(\[]\s*(pause|stille|nachspüren)[^\)\]]*[\)\]]\s*$/i;
+// 3. Erweitertes Pattern: "Pause für..." irgendwo in der Zeile
+const extendedPauseRegex = /(?:^|\s|\(|\[)pause\s+(?:für|von|:)\s*.+(?:\)|\]|$)/i;
+
+// 4. Stage Directions in Klammern
+const stageDirectionRegex = /^[\s]*[\(\[]\s*(?:pause|stille|nachspüren)[^\)\]]*[\)\]]\s*$/i;
 ```
 
-**Neu erkannte Formate (v2.4):**
+**Erkannte Formate (v2.4.2):**
 - ✅ `"Pause für 14 reale Minuten..."` → Erkannt mit 840s
+- ✅ `"Pause für 14 reale Minuten, um sein Chakrensystem zu energetisieren."` → Erkannt mit 840s (NEU!)
 - ✅ `"(Pause: 10 Sekunden)"` → Erkannt mit 10s
 - ✅ `"[Pause 5 Minuten]"` → Erkannt mit 300s
 
-**Pattern (Primär - wie bisher):**
+**v2.4.2 Bugfix:** Das primäre Pattern nutzt jetzt `\b` (Word-Boundary) statt `[\s:,]*`, um auch komplexe Sätze wie "Pause für 14 reale Minuten, um sein Chakrensystem zu energetisieren..." korrekt zu erkennen und zu schützen.
+
+**Pattern (Primär v2.4.2):**
 ```regex
-/^(?:(KURZE|LANGE|KLEINE|GROSSE)\s+)?(PAUSE|STILLE|NACHSPÜREN)[\s:,]*(.*)$/i
+/^(?:(KURZE|LANGE|KLEINE|GROSSE)\s+)?(PAUSE|STILLE|NACHSPÜREN)\b\s*(.*)$/i
 ```
 
 **Unterstützte Schlüsselwörter:**
@@ -1173,4 +1181,4 @@ VITE_GEMINI_API_KEY=your_key_here  # Optional (Offline-Modus wenn leer)
 ---
 
 **Stand:** 2026-02-09
-**Version:** EchoForge Bridge v2.4.0 (Intelligent Pre-Processing)
+**Version:** EchoForge Bridge v2.4.2 (Tolerant Pause Detection)
