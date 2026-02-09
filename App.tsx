@@ -361,7 +361,7 @@ const App: React.FC = () => {
           dispatch({
             type: 'SET_ERROR',
             payload: {
-              message: 'Keine Pausen gefunden. Im Meditations-Modus müssen Zeilen mit "PAUSE" oder "KURZE/LANGE PAUSE" beginnen (z.B. "PAUSE, um tief einzuatmen" oder "KURZE PAUSE für drei Atemzüge").'
+              message: 'Keine Pausen gefunden. Im Meditations-Modus werden folgende Formate erkannt:\n• Zeilen die mit "PAUSE", "STILLE" oder "NACHSPÜREN" beginnen\n• "Pause für X Minuten..." Anweisungen\n• Stage Directions in Klammern: (Pause: 10s)'
             }
           });
           return;

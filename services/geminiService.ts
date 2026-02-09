@@ -625,30 +625,64 @@ OUTPUT-FORMAT:
 }
 
 /**
- * STAGE DIRECTION PROTECTION (Meditation Mode)
- * Protects lines starting with PAUSE/STILLE/NACHSPÜREN from AI modification.
+ * STAGE DIRECTION PROTECTION (Meditation Mode) - ENHANCED v2.4.1
+ *
+ * Protects ALL pause-related lines from AI modification:
+ * 1. Lines STARTING with PAUSE/STILLE/NACHSPÜREN (with optional adjectives)
+ * 2. Lines CONTAINING "Pause für..." patterns (extended detection)
+ * 3. Lines with stage directions in brackets: (Pause...) or [Pause...]
+ *
+ * CRITICAL: The ENTIRE line is protected, not just the keyword.
+ * This ensures text like "Pause für 14 reale Minuten..." stays intact.
+ *
  * Returns the protected text and an array of original lines for later restoration.
  */
 function protectStageDirections(text: string): { protectedText: string; originalLines: string[] } {
     const originalLines: string[] = [];
     let protectedText = text;
+    const lines = text.split('\n');
+    const protectedLineIndices: Set<number> = new Set();
 
-    // Regex: Optional adjective (KURZE/LANGE/KLEINE/GROSSE) + keyword (PAUSE/STILLE/NACHSPÜREN) + rest
-    const stageDirectionRegex = /^((?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?(?:PAUSE|STILLE|NACHSPÜREN).*)$/gim;
+    // Pattern 1: Lines STARTING with keywords (original pattern)
+    // Matches: "PAUSE, um...", "KURZE PAUSE für...", "STILLE", "NACHSPÜREN"
+    const primaryPattern = /^(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?(?:PAUSE|STILLE|NACHSPÜREN)[\s:,]?/i;
 
-    // Collect all matches first to avoid regex state issues during replacement
-    const matches: string[] = [];
-    let match;
-    while ((match = stageDirectionRegex.exec(text)) !== null) {
-        matches.push(match[1]);
+    // Pattern 2: Lines CONTAINING "Pause für/von/:" patterns (extended)
+    // Matches: "Pause für 14 reale Minuten", "eine Pause von 5 Sekunden"
+    const extendedPattern = /(?:^|\s)pause\s+(?:für|von|:)\s*/i;
+
+    // Pattern 3: Stage directions in brackets/parentheses
+    // Matches: "(Pause: 10 Sekunden)", "[Pause 5 Min]"
+    const bracketPattern = /[\(\[]\s*(?:pause|stille|nachspüren)[^\)\]]*[\)\]]/i;
+
+    // Identify which lines need protection
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmedLine = line.trim();
+
+        if (!trimmedLine) continue;
+
+        if (primaryPattern.test(trimmedLine) ||
+            extendedPattern.test(trimmedLine) ||
+            bracketPattern.test(trimmedLine)) {
+            protectedLineIndices.add(i);
+        }
     }
 
-    // Replace each match with a unique placeholder
-    for (let i = 0; i < matches.length; i++) {
-        originalLines.push(matches[i]);
-        // Use a unique placeholder that the AI won't modify
-        protectedText = protectedText.replace(matches[i], `[[PROTECTED_STAGE_DIRECTION_${i}]]`);
+    // Build protected text with placeholders for entire lines
+    const resultLines: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        if (protectedLineIndices.has(i)) {
+            // Store original line (including whitespace)
+            originalLines.push(lines[i]);
+            // Replace with placeholder
+            resultLines.push(`[[PROTECTED_STAGE_DIRECTION_${originalLines.length - 1}]]`);
+        } else {
+            resultLines.push(lines[i]);
+        }
     }
+
+    protectedText = resultLines.join('\n');
 
     return { protectedText, originalLines };
 }
