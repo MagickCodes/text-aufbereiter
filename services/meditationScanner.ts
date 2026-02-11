@@ -125,22 +125,29 @@ export function scanForExplicitPauses(text: string): DetectedPause[] {
     const lines = text.split('\n');
     const detectedPauses: DetectedPause[] = [];
 
-    // PRIMARY REGEX (v2.4.3): Lines STARTING with pause keywords
-    // Uses word boundary \b to catch ANY following text
-    // Matches: "PAUSE", "KURZE PAUSE, um...", "STILLE", "NACHSPÜREN"
+    // ============================================================
+    // v2.4.5 "HAMMER" REGEX - AGGRESSIVE PAUSE DETECTION
+    // ============================================================
+    // Previous attempts were too precise. This version catches ANYTHING
+    // that remotely looks like a pause instruction.
+
+    // PATTERN 1: Classic keywords at line start (PAUSE, STILLE, NACHSPÜREN)
     const primaryPauseRegex = /^(?:(KURZE|LANGE|KLEINE|GROSSE)\s+)?(PAUSE|STILLE|NACHSPÜREN)\b\s*(.*)$/i;
 
-    // TIME-SENTENCE REGEX (v2.4.3 - CRITICAL FIX):
-    // Matches "Pause für X Minuten/Sekunden, ..." with ANYTHING after the time unit
-    // The .*$ at the end is CRITICAL - it captures commas, subordinate clauses, etc.
-    // Example: "Pause für 14 reale Minuten, um sein Chakrensystem zu energetisieren."
-    const timeSentenceRegex = /^\s*Pause\s+(?:für\s+|von\s+|ca\.?\s*)?(\d+|eine?|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|fünfzehn|zwanzig|dreißig)\s*(?:reale?\s+)?(Minuten?|Sekunden?|Stunden?).*$/im;
+    // PATTERN 2: "HAMMER" REGEX - THE NUCLEAR OPTION (v2.4.5)
+    // Catches: "Pause für 14 reale Minuten, um sein Chakrensystem zu energetisieren..."
+    // Logic:
+    // - Line starts with "Pause" (case insensitive, whitespace ok)
+    // - Somewhere after: a number (digits OR German words like "vierzehn")
+    // - Somewhere after: time unit (Minuten/Sekunden/Stunden)
+    // - [\s\S]*? = lazy match of ANY character including newlines (but we're line-by-line)
+    // - The $ at end captures EVERYTHING until line end
+    const aggressivePauseRegex = /^\s*Pause\b[\s\S]*?(\d+|ein|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|dreizehn|vierzehn|fünfzehn|sechzehn|siebzehn|achtzehn|neunzehn|zwanzig|dreißig|vierzig|fünfzig)[\s\S]*?(Minuten?|Sekunden?|Stunden?)[\s\S]*$/i;
 
-    // Extended Regex: Lines CONTAINING pause patterns (stage directions)
-    // Matches: "...eine Pause für...", "(Pause:...)", "[Pause ...]"
-    const extendedPauseRegex = /(?:^|\s|\(|\[)pause\s+(?:für|von|:)\s*.+(?:\)|\]|$)/i;
+    // PATTERN 3: Simple "Pause für/von" without requiring time (fallback)
+    const simplePauseRegex = /^\s*Pause\s+(?:für|von|:)\s+.+$/i;
 
-    // Stage direction patterns in parentheses/brackets
+    // PATTERN 4: Stage directions in brackets/parentheses
     const stageDirectionRegex = /^[\s]*[\(\[]\s*(?:pause|stille|nachspüren)[^\)\]]*[\)\]]\s*$/i;
 
     for (let i = 0; i < lines.length; i++) {
@@ -172,15 +179,16 @@ export function scanForExplicitPauses(text: string): DetectedPause[] {
             suggestedDuration = extractDurationFromText(trimmedLine);
         }
 
-        // Pattern 2: Time-sentence pattern (CRITICAL for "Pause für 14 Minuten, um..." sentences)
-        if (!matched && timeSentenceRegex.test(trimmedLine)) {
+        // Pattern 2: AGGRESSIVE "Hammer" pattern (v2.4.5)
+        // Catches: "Pause für 14 reale Minuten, um sein Chakrensystem..."
+        if (!matched && aggressivePauseRegex.test(trimmedLine)) {
             matched = true;
             instruction = `PAUSE – ${trimmedLine}`;
             suggestedDuration = extractDurationFromText(trimmedLine);
         }
 
-        // Pattern 3: Extended pattern (lines containing "Pause für..." anywhere)
-        if (!matched && extendedPauseRegex.test(trimmedLine)) {
+        // Pattern 3: Simple "Pause für/von..." fallback
+        if (!matched && simplePauseRegex.test(trimmedLine)) {
             matched = true;
             instruction = `PAUSE – ${trimmedLine}`;
             suggestedDuration = extractDurationFromText(trimmedLine);
@@ -332,22 +340,23 @@ export function isMeditationScript(text: string): boolean {
 
     const lines = text.split('\n');
 
-    // Primary pattern (v2.4.3): Lines starting with keywords (uses word boundary)
+    // Primary pattern (v2.4.5): Lines starting with keywords
     const primaryPattern = /^\s*(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?(?:PAUSE|STILLE|NACHSPÜREN)\b/i;
 
-    // Time-sentence pattern (v2.4.3): "Pause für X Minuten, ..." with time + any following text
-    const timeSentencePattern = /^\s*Pause\s+(?:für\s+|von\s+|ca\.?\s*)?\d+\s*(?:reale?\s+)?(?:Minuten?|Sekunden?|Stunden?)/i;
+    // AGGRESSIVE pattern (v2.4.5): "Pause ... [Zahl] ... Minuten/Sekunden"
+    // Catches complex sentences like "Pause für 14 reale Minuten, um..."
+    const aggressivePattern = /^\s*Pause\b[\s\S]*?(\d+|ein|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|dreizehn|vierzehn|fünfzehn)[\s\S]*?(Minuten?|Sekunden?|Stunden?)/i;
 
-    // Extended pattern: "...eine Pause für...", stage directions
-    const extendedPattern = /(?:^|\s|\(|\[)pause\s+(?:für|von|:)/i;
+    // Simple pattern: "Pause für/von..." without time requirement
+    const simplePattern = /^\s*Pause\s+(?:für|von|:)\s+/i;
 
     // Stage direction in brackets
     const bracketPattern = /^[\s]*[\(\[]\s*(?:pause|stille|nachspüren)/i;
 
     const pauseLines = lines.filter(line =>
         primaryPattern.test(line) ||
-        timeSentencePattern.test(line) ||
-        extendedPattern.test(line) ||
+        aggressivePattern.test(line) ||
+        simplePattern.test(line) ||
         bracketPattern.test(line)
     );
 

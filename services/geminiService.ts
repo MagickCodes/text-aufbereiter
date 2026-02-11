@@ -643,21 +643,22 @@ function protectStageDirections(text: string): { protectedText: string; original
     const lines = text.split('\n');
     const protectedLineIndices: Set<number> = new Set();
 
-    // Pattern 1 (v2.4.3): Lines STARTING with keywords (uses word boundary \b)
-    // Matches: "PAUSE", "KURZE PAUSE, um...", "STILLE", "NACHSPÜREN"
+    // ============================================================
+    // v2.4.5 "HAMMER" PROTECTION - AGGRESSIVE LINE DETECTION
+    // ============================================================
+
+    // Pattern 1: Classic keywords at line start (PAUSE, STILLE, NACHSPÜREN)
     const primaryPattern = /^(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?(?:PAUSE|STILLE|NACHSPÜREN)\b/i;
 
-    // Pattern 2 (v2.4.3 - CRITICAL): Time-sentences with "Pause für X Minuten, ..."
-    // The .*$ captures EVERYTHING after the time unit (commas, subordinate clauses, etc.)
-    // Example: "Pause für 14 reale Minuten, um sein Chakrensystem zu energetisieren."
-    const timeSentencePattern = /^\s*Pause\s+(?:für\s+|von\s+|ca\.?\s*)?(\d+|eine?|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|fünfzehn|zwanzig|dreißig)\s*(?:reale?\s+)?(Minuten?|Sekunden?|Stunden?).*$/i;
+    // Pattern 2: AGGRESSIVE "Hammer" pattern (v2.4.5) - THE NUCLEAR OPTION
+    // Catches: "Pause für 14 reale Minuten, um sein Chakrensystem zu energetisieren..."
+    // Logic: Line starts with "Pause" + somewhere has a number + somewhere has time unit
+    const aggressivePattern = /^\s*Pause\b[\s\S]*?(\d+|ein|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|dreizehn|vierzehn|fünfzehn|sechzehn|siebzehn|achtzehn|neunzehn|zwanzig|dreißig|vierzig|fünfzig)[\s\S]*?(Minuten?|Sekunden?|Stunden?)/i;
 
-    // Pattern 3: Lines CONTAINING pause patterns anywhere (stage directions in text)
-    // Matches: "...eine Pause für...", "hier ist eine Pause von 5 Sekunden"
-    const extendedPattern = /(?:^|\s)pause\s+(?:für|von|:)\s*/i;
+    // Pattern 3: Simple "Pause für/von..." without time requirement (fallback)
+    const simplePattern = /^\s*Pause\s+(?:für|von|:)\s+/i;
 
     // Pattern 4: Stage directions in brackets/parentheses
-    // Matches: "(Pause: 10 Sekunden)", "[Pause 5 Min]"
     const bracketPattern = /[\(\[]\s*(?:pause|stille|nachspüren)[^\)\]]*[\)\]]/i;
 
     // Identify which lines need protection
@@ -669,8 +670,8 @@ function protectStageDirections(text: string): { protectedText: string; original
 
         // Check all patterns - if ANY matches, protect the entire line
         if (primaryPattern.test(trimmedLine) ||
-            timeSentencePattern.test(trimmedLine) ||
-            extendedPattern.test(trimmedLine) ||
+            aggressivePattern.test(trimmedLine) ||
+            simplePattern.test(trimmedLine) ||
             bracketPattern.test(trimmedLine)) {
             protectedLineIndices.add(i);
         }
