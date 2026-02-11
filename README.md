@@ -181,6 +181,16 @@ Die Anwendung wählt automatisch den passenden Modus. Ist ein API-Schlüssel hin
   - `rtf.js` (RTF)
   - `jschardet` & `TextDecoder` (TXT Encoding-Erkennung)
 
+### 🌐 Ecosystem Port-Übersicht
+
+| Anwendung | Port | Beschreibung |
+|-----------|------|--------------|
+| **EchoForge Bridge** | `5173` | Text-Aufbereitung (dieses Projekt) |
+| **Audiobook Studio UI** | `4000` | Audio-Generierung Frontend |
+| **Audiobook Studio API** | `3001` | TTS Backend Service |
+
+> **Workflow:** Bridge (5173) → Text bereinigen → Download → Studio (4000) → Audio generieren
+
 ---
 
 ## 🔒 Sicherheit & Produktiver Einsatz (WICHTIG)

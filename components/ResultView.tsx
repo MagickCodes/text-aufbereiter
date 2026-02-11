@@ -488,6 +488,19 @@ export const ResultView: React.FC<ResultViewProps> = ({ text, rawText, fileName,
                         <DownloadIcon className="w-5 h-5" />
                         Download
                     </button>
+
+                    <div className="w-px h-8 bg-gray-600 mx-2 hidden sm:block"></div>
+
+                    {/* Audiobook Studio Link */}
+                    <a
+                        href="http://localhost:4000"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg hover:shadow-purple-500/25 w-full sm:w-auto justify-center"
+                        title="Öffne das Audiobook Studio zur Audio-Generierung"
+                    >
+                        🚀 Studio öffnen
+                    </a>
                 </div>
             </div>
 
