@@ -22,6 +22,20 @@ dist-ssr
 # Ausnahme: Das Example-File darf ins Repo, damit andere wissen, welche Variablen nötig sind
 !.env.example
 
+# Service Account Keys & Credentials (KRITISCH!)
+# Diese Dateien enthalten private Schlüssel und dürfen NIEMALS ins Repo!
+google_key.json
+service_account.json
+credentials.json
+*-key.json
+*_key.json
+*-credentials.json
+*_credentials.json
+# Allgemeiner Schutz für versehentlich benannte Key-Dateien
+**/secrets/
+**/*secret*
+**/*credential*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

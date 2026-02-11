@@ -32,6 +32,70 @@ txtZuAudio/
 
 ---
 
+## 🏗️ Ecosystem Architecture
+
+Die EchoForge Bridge ist Teil eines größeren Audio-Produktions-Workflows:
+
+### Port-Übersicht
+
+| Anwendung | Port | Technologie | Funktion |
+|-----------|------|-------------|----------|
+| **EchoForge Bridge** | `5173` | Vite + React | Text-Aufbereitung & Cleaning |
+| **Audiobook Studio UI** | `4000` | React | Audio-Generierung Frontend |
+| **Audiobook Studio API** | `3001` | Node.js/Python | TTS Engine Backend |
+
+### Workflow-Diagramm
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        USER WORKFLOW                                 │
+└─────────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  1. BRIDGE (localhost:5173)                                         │
+│     ├── Upload: PDF, DOCX, TXT, RTF, ODT                           │
+│     ├── KI-Cleaning: Gemini API / Offline                          │
+│     ├── Phonetik-Korrektur: "Chakra" → "Tschakra"                  │
+│     ├── Meditation Mode: Pausen-Tags [PAUSE 840s]                  │
+│     └── Download: Bereinigtes .txt                                  │
+└─────────────────────────────────────────────────────────────────────┘
+                                │
+                    Button: "🚀 Studio öffnen"
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  2. STUDIO UI (localhost:4000)                                      │
+│     ├── Upload: .txt aus Bridge                                     │
+│     ├── Voice Selection: Sprecher-Stimme wählen                    │
+│     ├── Speed Control: 0.9x (Meditation) / 1.0x (Normal)           │
+│     └── Generate: Audio-Datei erstellen                             │
+└─────────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  3. STUDIO API (localhost:3001)                                     │
+│     ├── TTS Engine: Google Cloud TTS / Coqui                       │
+│     ├── Pause Processing: [PAUSE Xs] → Stille einfügen            │
+│     └── Output: MP3/WAV Audiodatei                                  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Sicherheit: Service Account Keys
+
+**KRITISCH:** Die folgenden Dateien dürfen NIEMALS ins Git-Repository:
+
+| Datei | Verwendung | .gitignore Status |
+|-------|------------|-------------------|
+| `.env` | API-Keys (Gemini, OpenAI) | ✅ Ignoriert |
+| `google_key.json` | Google Cloud TTS Service Account | ✅ Ignoriert |
+| `credentials.json` | Allgemeine Credentials | ✅ Ignoriert |
+| `*_key.json` | Alle Key-Dateien | ✅ Ignoriert |
+
+**Prüfung:** `git ls-files | grep -E "(key|credential|secret)"` sollte nur `.env.example` zeigen.
+
+---
+
 ## 🧩 Core Services
 
 ### 1. **parserService.ts** – Datei-Extraktion
@@ -1181,4 +1245,4 @@ VITE_GEMINI_API_KEY=your_key_here  # Optional (Offline-Modus wenn leer)
 ---
 
 **Stand:** 2026-02-09
-**Version:** EchoForge Bridge v2.4.2 (Tolerant Pause Detection)
+**Version:** EchoForge Bridge v2.4.4 (Ecosystem Integration)
