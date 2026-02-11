@@ -643,13 +643,14 @@ function protectStageDirections(text: string): { protectedText: string; original
     const lines = text.split('\n');
     const protectedLineIndices: Set<number> = new Set();
 
-    // Pattern 1 (v2.4.2): Lines STARTING with keywords (uses word boundary \b)
-    // Matches: "PAUSE", "Pause für 14 Minuten...", "KURZE PAUSE, um...", "STILLE", "NACHSPÜREN"
+    // Pattern 1 (v2.4.3): Lines STARTING with keywords (uses word boundary \b)
+    // Matches: "PAUSE", "KURZE PAUSE, um...", "STILLE", "NACHSPÜREN"
     const primaryPattern = /^(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?(?:PAUSE|STILLE|NACHSPÜREN)\b/i;
 
-    // Pattern 2 (v2.4.2): Full sentences starting with "Pause für/von"
-    // Matches: "Pause für 14 reale Minuten, um sein Chakrensystem zu energetisieren..."
-    const sentencePattern = /^(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?PAUSE\s+(?:für|von)\s+/i;
+    // Pattern 2 (v2.4.3 - CRITICAL): Time-sentences with "Pause für X Minuten, ..."
+    // The .*$ captures EVERYTHING after the time unit (commas, subordinate clauses, etc.)
+    // Example: "Pause für 14 reale Minuten, um sein Chakrensystem zu energetisieren."
+    const timeSentencePattern = /^\s*Pause\s+(?:für\s+|von\s+|ca\.?\s*)?(\d+|eine?|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|fünfzehn|zwanzig|dreißig)\s*(?:reale?\s+)?(Minuten?|Sekunden?|Stunden?).*$/i;
 
     // Pattern 3: Lines CONTAINING pause patterns anywhere (stage directions in text)
     // Matches: "...eine Pause für...", "hier ist eine Pause von 5 Sekunden"
@@ -668,7 +669,7 @@ function protectStageDirections(text: string): { protectedText: string; original
 
         // Check all patterns - if ANY matches, protect the entire line
         if (primaryPattern.test(trimmedLine) ||
-            sentencePattern.test(trimmedLine) ||
+            timeSentencePattern.test(trimmedLine) ||
             extendedPattern.test(trimmedLine) ||
             bracketPattern.test(trimmedLine)) {
             protectedLineIndices.add(i);
