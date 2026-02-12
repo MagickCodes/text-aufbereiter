@@ -1,18 +1,65 @@
 import { DetectedPause } from '../types';
 
 /**
- * MEDITATION SCANNER SERVICE
+ * MEDITATION SCANNER SERVICE (v2.4.7)
  *
  * Specialized service for "Meditation Mode" processing.
- * Scans for explicit pause instructions in the text (lines starting with "PAUSE")
- * and allows users to interactively set pause durations.
+ *
+ * KEY CHANGE v2.4.7: "Explicit Shortcode Parsing"
+ * - User writes: `(10 Min)` or `[5 Minuten]` in the text
+ * - We convert to: `[PAUSE 600s]` or `[PAUSE 300s]`
+ * - No more "smart guessing" of pause sentences
  *
  * Use Case: Meditation scripts, guided audio, theatrical directions
- * Example Input Line: "PAUSE, um tief einzuatmen"
- * Example Output: "PAUSE, um tief einzuatmen [PAUSE 15s]"
  */
 
 const DEFAULT_PAUSE_DURATION = 15; // Default pause duration in seconds for meditation scripts
+
+/**
+ * SHORTCODE NORMALIZER (v2.4.7 - NEW)
+ *
+ * Converts user-friendly pause shortcodes to system tags BEFORE AI processing.
+ * This runs at the very beginning of the pipeline.
+ *
+ * Supported formats:
+ * - (10 Min) → [PAUSE 600s]
+ * - [5 Minuten] → [PAUSE 300s]
+ * - (Pause: 30 Sek) → [PAUSE 30s]
+ * - (14 Min) → [PAUSE 840s]
+ * - [1,5 Minuten] → [PAUSE 90s]
+ *
+ * @param text - Raw input text
+ * @returns Text with shortcodes converted to [PAUSE Xs] tags
+ */
+export function normalizePauseShortcodes(text: string): string {
+    if (!text) return text;
+
+    // Regex: Match content in () or [] that looks like a pause duration
+    // Pattern: optional "Pause:" + number (with decimal) + time unit
+    const shortcodeRegex = /[\(\[]\s*(?:Pause:?\s*)?(\d+(?:[.,]\d+)?)\s*(Minuten?|Min\.?|Sekunden?|Sek\.?|Stunden?|Std\.?|s|m|h)\s*[\)\]]/gi;
+
+    return text.replace(shortcodeRegex, (match, numStr, unit) => {
+        // Parse the number (handle German comma as decimal separator)
+        const num = parseFloat(numStr.replace(',', '.'));
+        if (isNaN(num) || num <= 0) return match; // Keep original if invalid
+
+        // Determine multiplier based on unit
+        const unitLower = unit.toLowerCase();
+        let multiplier = 1; // Default: seconds
+
+        if (unitLower.startsWith('min') || unitLower === 'm') {
+            multiplier = 60;
+        } else if (unitLower.startsWith('std') || unitLower.startsWith('stund') || unitLower === 'h') {
+            multiplier = 3600;
+        }
+        // sek, s, sekunden → multiplier stays 1
+
+        const seconds = Math.round(num * multiplier);
+
+        // Return the normalized tag with spaces for safety
+        return ` [PAUSE ${seconds}s] `;
+    });
+}
 
 /**
  * Extracts duration in seconds from a pause line.
@@ -126,28 +173,21 @@ export function scanForExplicitPauses(text: string): DetectedPause[] {
     const detectedPauses: DetectedPause[] = [];
 
     // ============================================================
-    // v2.4.5 "HAMMER" REGEX - AGGRESSIVE PAUSE DETECTION
+    // v2.4.7 SIMPLIFIED PAUSE DETECTION
     // ============================================================
-    // Previous attempts were too precise. This version catches ANYTHING
-    // that remotely looks like a pause instruction.
+    // No more "smart guessing". We rely on:
+    // 1. Explicit keywords (PAUSE, STILLE, NACHSPÜREN)
+    // 2. Pre-normalized [PAUSE Xs] tags from normalizePauseShortcodes()
+    // 3. Stage directions in brackets
 
     // PATTERN 1: Classic keywords at line start (PAUSE, STILLE, NACHSPÜREN)
     const primaryPauseRegex = /^(?:(KURZE|LANGE|KLEINE|GROSSE)\s+)?(PAUSE|STILLE|NACHSPÜREN)\b\s*(.*)$/i;
 
-    // PATTERN 2: "HAMMER" REGEX - THE NUCLEAR OPTION (v2.4.5)
-    // Catches: "Pause für 14 reale Minuten, um sein Chakrensystem zu energetisieren..."
-    // Logic:
-    // - Line starts with "Pause" (case insensitive, whitespace ok)
-    // - Somewhere after: a number (digits OR German words like "vierzehn")
-    // - Somewhere after: time unit (Minuten/Sekunden/Stunden)
-    // - [\s\S]*? = lazy match of ANY character including newlines (but we're line-by-line)
-    // - The $ at end captures EVERYTHING until line end
-    const aggressivePauseRegex = /^\s*Pause\b[\s\S]*?(\d+|ein|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|dreizehn|vierzehn|fünfzehn|sechzehn|siebzehn|achtzehn|neunzehn|zwanzig|dreißig|vierzig|fünfzig)[\s\S]*?(Minuten?|Sekunden?|Stunden?)[\s\S]*$/i;
+    // PATTERN 2: Lines containing already-normalized [PAUSE Xs] tags
+    // These come from normalizePauseShortcodes() which converted (14 Min) → [PAUSE 840s]
+    const normalizedTagRegex = /\[PAUSE\s+(\d+(?:\.\d+)?)s\]/i;
 
-    // PATTERN 3: Simple "Pause für/von" without requiring time (fallback)
-    const simplePauseRegex = /^\s*Pause\s+(?:für|von|:)\s+.+$/i;
-
-    // PATTERN 4: Stage directions in brackets/parentheses
+    // PATTERN 3: Stage directions in brackets/parentheses (explicit pause/stille text)
     const stageDirectionRegex = /^[\s]*[\(\[]\s*(?:pause|stille|nachspüren)[^\)\]]*[\)\]]\s*$/i;
 
     for (let i = 0; i < lines.length; i++) {
@@ -179,22 +219,19 @@ export function scanForExplicitPauses(text: string): DetectedPause[] {
             suggestedDuration = extractDurationFromText(trimmedLine);
         }
 
-        // Pattern 2: AGGRESSIVE "Hammer" pattern (v2.4.5)
-        // Catches: "Pause für 14 reale Minuten, um sein Chakrensystem..."
-        if (!matched && aggressivePauseRegex.test(trimmedLine)) {
-            matched = true;
-            instruction = `PAUSE – ${trimmedLine}`;
-            suggestedDuration = extractDurationFromText(trimmedLine);
+        // Pattern 2: Lines containing [PAUSE Xs] tags (from normalizePauseShortcodes)
+        // The tag already contains the duration, extract it
+        if (!matched) {
+            const tagMatch = normalizedTagRegex.exec(trimmedLine);
+            if (tagMatch) {
+                matched = true;
+                instruction = `PAUSE – ${trimmedLine}`;
+                // Extract duration from the tag itself
+                suggestedDuration = parseFloat(tagMatch[1]) || DEFAULT_PAUSE_DURATION;
+            }
         }
 
-        // Pattern 3: Simple "Pause für/von..." fallback
-        if (!matched && simplePauseRegex.test(trimmedLine)) {
-            matched = true;
-            instruction = `PAUSE – ${trimmedLine}`;
-            suggestedDuration = extractDurationFromText(trimmedLine);
-        }
-
-        // Pattern 4: Stage direction in brackets/parentheses
+        // Pattern 3: Stage direction in brackets/parentheses
         if (!matched && stageDirectionRegex.test(trimmedLine)) {
             matched = true;
             instruction = `PAUSE – ${trimmedLine}`;
@@ -203,7 +240,7 @@ export function scanForExplicitPauses(text: string): DetectedPause[] {
 
         if (matched) {
             const detectedPause: DetectedPause = {
-                id: `pause-${i}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                id: `pause-${i}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
                 lineNumber: i + 1,
                 originalText: line,
                 duration: suggestedDuration,
@@ -328,35 +365,38 @@ export function getMeditationSummary(pauses: DetectedPause[]): string {
 }
 
 /**
- * Checks if text is suitable for meditation mode processing.
- * Looks for indicators like "PAUSE", "STILLE", "NACHSPÜREN" keywords (with optional adjectives).
- * Also detects extended patterns like "Pause für X Minuten".
+ * Checks if text is suitable for meditation mode processing (v2.4.7).
+ *
+ * Detects:
+ * - Keywords: PAUSE, STILLE, NACHSPÜREN
+ * - Shortcodes: (10 Min), [5 Minuten]
+ * - Already-normalized tags: [PAUSE 600s]
+ * - Stage directions in brackets
  *
  * @param text - Text to analyze
- * @returns True if text contains meditation-style pause/stage markers
+ * @returns True if text contains meditation-style pause markers
  */
 export function isMeditationScript(text: string): boolean {
     if (!text) return false;
 
     const lines = text.split('\n');
 
-    // Primary pattern (v2.4.5): Lines starting with keywords
+    // Primary pattern: Lines starting with keywords
     const primaryPattern = /^\s*(?:(?:KURZE|LANGE|KLEINE|GROSSE)\s+)?(?:PAUSE|STILLE|NACHSPÜREN)\b/i;
 
-    // AGGRESSIVE pattern (v2.4.5): "Pause ... [Zahl] ... Minuten/Sekunden"
-    // Catches complex sentences like "Pause für 14 reale Minuten, um..."
-    const aggressivePattern = /^\s*Pause\b[\s\S]*?(\d+|ein|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|dreizehn|vierzehn|fünfzehn)[\s\S]*?(Minuten?|Sekunden?|Stunden?)/i;
+    // Shortcode pattern: (10 Min), [5 Minuten], (Pause: 30 Sek)
+    const shortcodePattern = /[\(\[]\s*(?:Pause:?\s*)?\d+(?:[.,]\d+)?\s*(?:Minuten?|Min\.?|Sekunden?|Sek\.?|s|m)\s*[\)\]]/i;
 
-    // Simple pattern: "Pause für/von..." without time requirement
-    const simplePattern = /^\s*Pause\s+(?:für|von|:)\s+/i;
+    // Already-normalized tags: [PAUSE 600s]
+    const normalizedTagPattern = /\[PAUSE\s+\d+(?:\.\d+)?s\]/i;
 
     // Stage direction in brackets
     const bracketPattern = /^[\s]*[\(\[]\s*(?:pause|stille|nachspüren)/i;
 
     const pauseLines = lines.filter(line =>
         primaryPattern.test(line) ||
-        aggressivePattern.test(line) ||
-        simplePattern.test(line) ||
+        shortcodePattern.test(line) ||
+        normalizedTagPattern.test(line) ||
         bracketPattern.test(line)
     );
 
